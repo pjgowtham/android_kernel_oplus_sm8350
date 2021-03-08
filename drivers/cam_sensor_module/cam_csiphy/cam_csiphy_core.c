@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -16,6 +16,7 @@
 #include "cam_mem_mgr.h"
 #include "cam_cpas_api.h"
 #include "cam_compat.h"
+#include "cam_subdev.h"
 
 #define SCM_SVC_CAMERASS 0x18
 #define SECURE_SYSCALL_ID 0x6
@@ -516,8 +517,6 @@ void cam_csiphy_cphy_irq_disable(struct csiphy_device *csiphy_dev)
 
 irqreturn_t cam_csiphy_irq(int irq_num, void *data)
 {
-	uint32_t irq;
-	uint8_t i;
 	struct csiphy_device *csiphy_dev =
 		(struct csiphy_device *)data;
 	struct cam_hw_soc_info *soc_info = NULL;
@@ -530,25 +529,16 @@ irqreturn_t cam_csiphy_irq(int irq_num, void *data)
 	}
 
 	soc_info = &csiphy_dev->soc_info;
-	base =  csiphy_dev->soc_info.reg_map[0].mem_base;
+	base = csiphy_dev->soc_info.reg_map[0].mem_base;
 	csiphy_reg = &csiphy_dev->ctrl_reg->csiphy_reg;
 
-	for (i = 0; i < csiphy_dev->num_irq_registers; i++) {
-		irq = cam_io_r(base +
-			csiphy_reg->mipi_csiphy_interrupt_status0_addr +
-			(0x4 * i));
-		cam_io_w_mb(irq, base +
-			csiphy_reg->mipi_csiphy_interrupt_clear0_addr +
-			(0x4 * i));
-		CAM_ERR_RATE_LIMIT(CAM_CSIPHY,
-			"CSIPHY%d_IRQ_STATUS_ADDR%d = 0x%x",
-			soc_info->index, i, irq);
-		cam_io_w_mb(0x0, base +
-			csiphy_reg->mipi_csiphy_interrupt_clear0_addr +
-			(0x4 * i));
+	if (csiphy_dev->enable_irq_dump) {
+		cam_csiphy_status_dmp(csiphy_dev);
+		cam_io_w_mb(0x1,
+			base + csiphy_reg->mipi_csiphy_glbl_irq_cmd_addr);
+		cam_io_w_mb(0x0,
+			base + csiphy_reg->mipi_csiphy_glbl_irq_cmd_addr);
 	}
-	cam_io_w_mb(0x1, base + csiphy_reg->mipi_csiphy_glbl_irq_cmd_addr);
-	cam_io_w_mb(0x0, base + csiphy_reg->mipi_csiphy_glbl_irq_cmd_addr);
 
 	return IRQ_HANDLED;
 }
@@ -1379,8 +1369,9 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		struct cam_ahb_vote ahb_vote;
 		struct cam_axi_vote axi_vote = {0};
 		struct cam_start_stop_dev_cmd config;
-		int32_t offset;
+		int32_t i, offset;
 		int clk_vote_level = -1;
+		unsigned long clk_rate = 0;
 
 		rc = copy_from_user(&config, (void __user *)cmd->handle,
 			sizeof(config));
@@ -1419,6 +1410,21 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 					"Failed to set the clk_rate level: %d",
 					clk_vote_level);
 				rc = 0;
+			}
+
+			for (i = 0; i < csiphy_dev->soc_info.num_clk; i++) {
+				if (i == csiphy_dev->soc_info.src_clk_idx) {
+					CAM_DBG(CAM_CSIPHY, "Skipping call back for src clk %s",
+						csiphy_dev->soc_info.clk_name[i]);
+					continue;
+				}
+				clk_rate = cam_soc_util_get_clk_rate_applied(
+					&csiphy_dev->soc_info, i, false, clk_vote_level);
+				if(clk_rate > 0) {
+					cam_subdev_notify_message(CAM_TFE_DEVICE_TYPE,
+						CAM_SUBDEV_MESSAGE_CLOCK_UPDATE,
+						clk_rate);
+				}
 			}
 
 			if (csiphy_dev->csiphy_info[offset].secure_mode == 1) {
