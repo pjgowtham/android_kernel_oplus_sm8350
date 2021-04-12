@@ -2288,6 +2288,54 @@ static struct cal_block_data *adm_find_cal(int cal_index, int path,
 	return adm_find_cal_by_app_type(cal_index, path, app_type);
 }
 
+static struct cal_block_data *adm_find_cal_by_buf_number(int usecase, int cal_index, int path,
+					   int app_type, int acdb_id,
+					   int sample_rate)
+{
+	struct list_head *ptr, *next;
+	struct cal_block_data *cal_block = NULL;
+	struct audio_cal_info_audproc *audproc_cal_info = NULL;
+	struct audio_cal_info_audvol *audvol_cal_info = NULL;
+	int buffer_idx_w_path;
+
+	pr_debug("%s:\n", __func__);
+
+	buffer_idx_w_path = path + MAX_PATH_TYPE * usecase;
+
+	list_for_each_safe(ptr, next,
+		&this_adm.cal_data[cal_index]->cal_blocks) {
+
+		cal_block = list_entry(ptr,
+			struct cal_block_data, list);
+		if (cal_utils_is_cal_stale(cal_block))
+			continue;
+
+		if (cal_index == ADM_AUDPROC_CAL ||
+		    cal_index == ADM_LSM_AUDPROC_CAL ||
+		    cal_index == ADM_LSM_AUDPROC_PERSISTENT_CAL) {
+			audproc_cal_info = cal_block->cal_info;
+			if ((cal_block->buffer_number == buffer_idx_w_path) &&
+			    (audproc_cal_info->path == path) &&
+			    (audproc_cal_info->app_type == app_type) &&
+			    (audproc_cal_info->acdb_id == acdb_id) &&
+			    (audproc_cal_info->sample_rate == sample_rate) &&
+			    (cal_block->cal_data.size > 0))
+				return cal_block;
+		} else if (cal_index == ADM_AUDVOL_CAL) {
+			audvol_cal_info = cal_block->cal_info;
+			if ((cal_block->buffer_number == buffer_idx_w_path) &&
+			    (audvol_cal_info->path == path) &&
+			    (audvol_cal_info->app_type == app_type) &&
+			    (audvol_cal_info->acdb_id == acdb_id) &&
+			    (cal_block->cal_data.size > 0))
+				return cal_block;
+		}
+	}
+	pr_debug("%s: Can't find ADM cal for buffer_number %d, cal_index %d, path %d, app %d, acdb_id %d sample_rate %d defaulting to search by app type\n",
+		__func__, buffer_idx_w_path, cal_index, path, app_type, acdb_id, sample_rate);
+	return adm_find_cal(cal_index, path, app_type, acdb_id, sample_rate);
+}
+
 static int adm_remap_and_send_cal_block(int cal_index, int port_id,
 	int copp_idx, struct cal_block_data *cal_block, int perf_mode,
 	int app_type, int acdb_id, int sample_rate)
@@ -2309,12 +2357,12 @@ done:
 	return ret;
 }
 
-static void send_adm_cal_type(int cal_index, int path, int port_id,
+static void send_adm_cal_type(int fedai_id, int cal_index, int path, int port_id,
 			      int copp_idx, int perf_mode, int app_type,
 			      int acdb_id, int sample_rate)
 {
 	struct cal_block_data		*cal_block = NULL;
-	int ret, port_idx, topology;
+	int ret;
 	int dest_perms[2] = {PERM_READ | PERM_WRITE, PERM_READ | PERM_WRITE};
 	int source_vm[1] = {VMID_HLOS};
 	int dest_vm[2] = {VMID_LPASS, VMID_ADSP_HEAP};
@@ -2327,21 +2375,13 @@ static void send_adm_cal_type(int cal_index, int path, int port_id,
 		goto done;
 	}
 
-	port_idx = adm_validate_and_get_port_index(port_id);
-	if (port_idx < 0) {
-		pr_err("%s: Invalid port id: 0x%x", __func__, port_id);
-		goto done;
-	}
-
 	mutex_lock(&this_adm.cal_data[cal_index]->lock);
-	cal_block = adm_find_cal(cal_index, path, app_type, acdb_id,
+	cal_block = adm_find_cal_by_buf_number(fedai_id, cal_index, path, app_type, acdb_id,
 				sample_rate);
 	if (cal_block == NULL)
 		goto unlock;
 
-	topology = atomic_read(&this_adm.copp.topology[port_idx][copp_idx]);
-	if (cal_block->cma_mem &&
-	    topology == VPM_TX_VOICE_FLUENCE_NN_COPP_TOPOLOGY) {
+	if (cal_block->cma_mem) {
 		if (cal_block->cal_data.paddr == 0 ||
 		    cal_block->map_data.map_size <= 0) {
 			pr_err("%s: No address to map!\n", __func__);
@@ -2382,28 +2422,30 @@ static int get_cal_path(int path)
 		return TX_DEVICE;
 }
 
-static void send_adm_cal(int port_id, int copp_idx, int path, int perf_mode,
+static void send_adm_cal(int fedai_id, int port_id, int copp_idx, int path, int perf_mode,
 			 int app_type, int acdb_id, int sample_rate,
 			 int passthr_mode)
 {
 	pr_debug("%s: port id 0x%x copp_idx %d\n", __func__, port_id, copp_idx);
 
 	if (passthr_mode != LISTEN) {
-		send_adm_cal_type(ADM_AUDPROC_CAL, path, port_id, copp_idx,
+		send_adm_cal_type(fedai_id, ADM_AUDPROC_CAL, path, port_id, copp_idx,
 				perf_mode, app_type, acdb_id, sample_rate);
-		send_adm_cal_type(ADM_AUDPROC_PERSISTENT_CAL, path,
+		/* send persistent cal only in case of record */
+		if (path == TX_DEVICE)
+			send_adm_cal_type(fedai_id, ADM_LSM_AUDPROC_PERSISTENT_CAL, path,
 				  port_id, copp_idx, perf_mode, app_type,
 				  acdb_id, sample_rate);
 	} else {
-		send_adm_cal_type(ADM_LSM_AUDPROC_CAL, path, port_id, copp_idx,
+		send_adm_cal_type(fedai_id, ADM_LSM_AUDPROC_CAL, path, port_id, copp_idx,
 				  perf_mode, app_type, acdb_id, sample_rate);
 
-		send_adm_cal_type(ADM_LSM_AUDPROC_PERSISTENT_CAL, path,
+		send_adm_cal_type(fedai_id, ADM_LSM_AUDPROC_PERSISTENT_CAL, path,
 				  port_id, copp_idx, perf_mode, app_type,
 				  acdb_id, sample_rate);
 	}
 
-	send_adm_cal_type(ADM_AUDVOL_CAL, path, port_id, copp_idx, perf_mode,
+	send_adm_cal_type(fedai_id, ADM_AUDVOL_CAL, path, port_id, copp_idx, perf_mode,
 			  app_type, acdb_id, sample_rate);
 }
 
@@ -3130,7 +3172,8 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	}
 
 	if ((topology == VPM_TX_SM_ECNS_V2_COPP_TOPOLOGY) ||
-	    (topology == VPM_TX_DM_FLUENCE_EF_COPP_TOPOLOGY)) {
+	    (topology == VPM_TX_DM_FLUENCE_EF_COPP_TOPOLOGY) ||
+	    (topology == VPM_TX_VOICE_FLUENCE_NN_COPP_TOPOLOGY)) {
 		if ((rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_8K) &&
 		    (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_16K) &&
 		    (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_32K) &&
@@ -3621,6 +3664,7 @@ static void route_set_opcode_matrix_id(
  * adm_matrix_map -
  *        command to send ADM matrix map for ADM copp list
  *
+ * @fedai_id: FrontEnd DAI ID
  * @path: direction or ADM path type
  * @payload_map: have info of session id and associated copp_idx/num_copps
  * @perf_mode: performance mode like LL/ULL/..
@@ -3628,7 +3672,7 @@ static void route_set_opcode_matrix_id(
  *
  * Returns 0 on success or error on failure
  */
-int adm_matrix_map(int path, struct route_payload payload_map, int perf_mode,
+int adm_matrix_map(int fedai_id, int path, struct route_payload payload_map, int perf_mode,
 			uint32_t passthr_mode)
 {
 	struct adm_cmd_matrix_map_routings_v5	*route;
@@ -3738,7 +3782,7 @@ int adm_matrix_map(int path, struct route_payload payload_map, int perf_mode,
 						__func__, port_idx, copp_idx);
 				continue;
 			}
-			send_adm_cal(payload_map.port_id[i], copp_idx,
+			send_adm_cal(fedai_id, payload_map.port_id[i], copp_idx,
 				     get_cal_path(path), perf_mode,
 				     payload_map.app_type[i],
 				     payload_map.acdb_dev_id[i],
@@ -3887,13 +3931,14 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 {
 	struct apr_hdr close;
 
-	int ret = 0, port_idx, app_type, topology;
+	int ret = 0, port_idx, app_type;
 	int copp_id = RESET_COPP_ID;
 	bool result = false;
 	int dest_perms[1] = {PERM_READ | PERM_WRITE | PERM_EXEC};
 	int source_vm[2] = {VMID_LPASS, VMID_ADSP_HEAP};
 	int dest_vm[1] = {VMID_HLOS};
 	struct cal_block_data *cal_block = NULL;
+	struct audio_cal_info_audproc *audproc_cal_info = NULL;
 	int cal_index = ADM_AUDPROC_PERSISTENT_CAL;
 
 	pr_debug("%s: port_id=0x%x perf_mode: %d copp_idx: %d\n", __func__,
@@ -3913,7 +3958,6 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 	}
 
 	port_channel_map[port_idx].set_channel_map = false;
-	topology = atomic_read(&this_adm.copp.topology[port_idx][copp_idx]);
 	app_type = atomic_read(&this_adm.copp.app_type[port_idx][copp_idx]);
 	if (this_adm.copp.adm_delay[port_idx][copp_idx] && perf_mode
 		== LEGACY_PCM_MODE) {
@@ -3996,9 +4040,7 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 		ret = apr_send_pkt(this_adm.apr, (uint32_t *)&close);
 		if (ret < 0) {
 			pr_err("%s: ADM close failed %d\n", __func__, ret);
-			if (this_adm.tx_port_id == port_id &&
-			    this_adm.fnn_app_type == app_type &&
-			    topology == VPM_TX_VOICE_FLUENCE_NN_COPP_TOPOLOGY) {
+			if (this_adm.tx_port_id == port_id) {
 				mutex_lock(&this_adm.cal_data[cal_index]->lock);
 				cal_block = cal_utils_get_only_cal_block(
 						this_adm.cal_data[cal_index]);
@@ -4007,7 +4049,12 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 					pr_debug("%s: cma_alloc %d\n",
 						 __func__, cal_block->cma_mem);
 				}
-				if (result) {
+				if (result && app_type == 0) {
+					audproc_cal_info = cal_block->cal_info;
+					app_type = audproc_cal_info->app_type;
+				}
+
+				if (result && this_adm.fnn_app_type == app_type) {
 					pr_debug("%s: use hyp assigned %d, use buffer %d\n",
 						 __func__, this_adm.hyp_assigned,
 						cal_block->buffer_number);
@@ -4083,9 +4130,7 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 		rtac_remove_adm_device(port_id, copp_id);
 	}
 
-	if (this_adm.tx_port_id == port_id &&
-	    this_adm.fnn_app_type == app_type &&
-	    topology == VPM_TX_VOICE_FLUENCE_NN_COPP_TOPOLOGY) {
+	if (this_adm.tx_port_id == port_id) {
 		mutex_lock(&this_adm.cal_data[cal_index]->lock);
 		cal_block = cal_utils_get_only_cal_block(
 				this_adm.cal_data[cal_index]);
@@ -4094,8 +4139,12 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 			pr_debug("%s: cma_alloc %d\n",
 				 __func__, cal_block->cma_mem);
 		}
+		if (result && app_type == 0) {
+			audproc_cal_info = cal_block->cal_info;
+			app_type = audproc_cal_info->app_type;
+		}
 
-		if (result) {
+		if (result && this_adm.fnn_app_type == app_type) {
 			pr_debug("%s: use hyp assigned %d, use buffer %d\n",
 				  __func__, this_adm.hyp_assigned,
 				  cal_block->buffer_number);
