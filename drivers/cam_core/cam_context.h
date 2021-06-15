@@ -9,6 +9,7 @@
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
 #include <linux/kref.h>
+#include <media/v4l2-subdev.h>
 #include "cam_req_mgr_interface.h"
 #include "cam_hw_mgr_intf.h"
 #include "cam_smmu_api.h"
@@ -95,6 +96,7 @@ struct cam_ctx_request {
  * @acquire_hw:            Function pointer for acquire hw
  * @release_hw:            Function pointer for release hw
  * @dump_dev:              Function pointer for dump dev
+ * @shutdown_dev:          Function pointer for shutdown dev
  *
  */
 struct cam_ctx_ioctl_ops {
@@ -114,6 +116,8 @@ struct cam_ctx_ioctl_ops {
 	int (*release_hw)(struct cam_context *ctx, void *args);
 	int (*dump_dev)(struct cam_context *ctx,
 			struct cam_dump_req_cmd *cmd);
+	int (*shutdown_dev)(struct v4l2_subdev *sd,
+			struct v4l2_subdev_fh *fh);
 };
 
 /**
@@ -127,7 +131,6 @@ struct cam_ctx_ioctl_ops {
  * @flush_req:             Flush request to remove request ids
  * @process_evt:           Handle event notification from CRM.(optional)
  * @dump_req:              Dump information for the issue request
- * @change_state:          Change sub-state of hw context layer to bubble
  *
  */
 struct cam_ctx_crm_ops {
@@ -147,8 +150,6 @@ struct cam_ctx_crm_ops {
 			struct cam_req_mgr_link_evt_data *evt_data);
 	int (*dump_req)(struct cam_context *ctx,
 			struct cam_req_mgr_dump_info *dump);
-	int (*change_state)(struct cam_context *ctx,
-			struct cam_req_mgr_request_change_state *change_state);
 };
 
 
@@ -312,18 +313,6 @@ int cam_context_handle_crm_unlink(struct cam_context *ctx,
  */
 int cam_context_handle_crm_apply_req(struct cam_context *ctx,
 		struct cam_req_mgr_apply_request *apply);
-
-/**
- * cam_context_handle_crm_state_change()
- *
- * @brief:        Handle state change request
- *
- * @ctx:          Object pointer for cam_context
- * @state_info:   State change request command payload
- *
- */
-int cam_context_handle_crm_state_change(struct cam_context *ctx,
-		struct cam_req_mgr_request_change_state *state_info);
 
 /**
  * cam_context_handle_crm_notify_frame_skip()
@@ -493,6 +482,19 @@ int cam_context_handle_start_dev(struct cam_context *ctx,
  */
 int cam_context_handle_stop_dev(struct cam_context *ctx,
 		struct cam_start_stop_dev_cmd *cmd);
+
+/**
+ * cam_context_handle_shutdown_dev()
+ *
+ * @brief:        Handle shutdown device command
+ *
+ * @ctx:          Object pointer for cam_context
+ * @cmd:          Shutdown device command payload
+ * @fh:           Pointer to struct v4l2_subdev_fh
+ *
+ */
+int cam_context_handle_shutdown_dev(struct cam_context *ctx,
+	struct cam_control *cmd, struct v4l2_subdev_fh *fh);
 
 /**
  * cam_context_handle_dump_dev()

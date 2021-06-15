@@ -78,6 +78,7 @@ static int cam_ife_csid_is_ipp_ppp_format_supported(
 	case CAM_FORMAT_DPCM_14_10_14:
 	case CAM_FORMAT_DPCM_12_10_12:
 	case CAM_FORMAT_YUV422:
+	case CAM_FORMAT_YUV422_10:
 		rc = 0;
 		break;
 	default:
@@ -260,6 +261,10 @@ static int cam_ife_csid_get_format_rdi(
 		*decode_fmt  = 0x1;
 		*plain_fmt = 0x0;
 		break;
+	case CAM_FORMAT_YUV422_10:
+		*decode_fmt  = 0x2;
+		*plain_fmt = 0x1;
+		break;
 	default:
 		rc = -EINVAL;
 		break;
@@ -341,6 +346,10 @@ static int cam_ife_csid_get_format_ipp_ppp(
 	case CAM_FORMAT_YUV422:
 		*decode_fmt  = 0x1;
 		*plain_fmt = 0;
+		break;
+	case CAM_FORMAT_YUV422_10:
+		*decode_fmt  = 0x2;
+		*plain_fmt = 0x1;
 		break;
 	default:
 		CAM_ERR(CAM_ISP, "Unsupported format %d",
@@ -1674,6 +1683,8 @@ static int cam_ife_csid_tpg_start(struct cam_ife_csid_hw   *csid_hw,
 		val = cam_io_r_mb(soc_info->reg_map[0].mem_base + 0x600);
 		CAM_DBG(CAM_ISP, "reg 0x%x = 0x%x", 0x600, val);
 	}
+
+	res->res_state = CAM_ISP_RESOURCE_STATE_STREAMING;
 
 	return 0;
 }
@@ -4231,6 +4242,8 @@ int cam_ife_csid_stop(void *hw_priv,
 		res = csid_stop->node_res[i];
 		res->res_state = CAM_ISP_RESOURCE_STATE_INIT_HW;
 	}
+
+	csid_hw->error_irq_count = 0;
 
 	CAM_DBG(CAM_ISP,  "%s: Exit\n", __func__);
 

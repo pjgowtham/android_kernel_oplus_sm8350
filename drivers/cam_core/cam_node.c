@@ -297,6 +297,27 @@ static int __cam_node_handle_stop_dev(struct cam_node *node,
 	return rc;
 }
 
+int cam_node_handle_shutdown_dev(struct cam_node *node,
+	struct cam_control *cmd, struct v4l2_subdev_fh *fh)
+{
+	struct cam_context *ctx = NULL;
+	int32_t dev_index = -1;
+	int rc = 0, ret = 0;
+
+	while ((dev_index = cam_get_dev_handle_info(cmd->handle,
+		&ctx, dev_index)) < CAM_REQ_MGR_MAX_HANDLES_V2) {
+		ret = cam_context_handle_shutdown_dev(ctx, cmd, fh);
+		if (ret) {
+			rc = ret;
+			CAM_ERR(CAM_CORE, "Shutdown failure for node %s",
+					node->name);
+			continue;
+		}
+	}
+
+	return rc;
+}
+
 static int __cam_node_handle_config_dev(struct cam_node *node,
 	struct cam_config_dev_cmd *config)
 {
@@ -619,24 +640,6 @@ static int __cam_node_crm_flush_req(struct cam_req_mgr_flush_request *flush)
 	return cam_context_handle_crm_flush_req(ctx, flush);
 }
 
-static int __cam_node_crm_state_change_req(
-	struct cam_req_mgr_request_change_state *state_info)
-{
-	struct cam_context *ctx = NULL;
-
-	if (!state_info)
-		return -EINVAL;
-
-	ctx = (struct cam_context *) cam_get_device_priv(state_info->dev_hdl);
-	if (!ctx) {
-		CAM_ERR(CAM_CORE, "Can not get context for handle %d",
-			state_info->dev_hdl);
-		return -EINVAL;
-	}
-
-	return cam_context_handle_crm_state_change(ctx, state_info);
-}
-
 static int __cam_node_crm_process_evt(
 	struct cam_req_mgr_link_evt_data *evt_data)
 {
@@ -733,7 +736,6 @@ int cam_node_init(struct cam_node *node, struct cam_hw_mgr_intf *hw_mgr_intf,
 	node->crm_node_intf.dump_req = __cam_node_crm_dump_req;
 	node->crm_node_intf.notify_frame_skip =
 		__cam_node_crm_notify_frame_skip;
-	node->crm_node_intf.change_state = __cam_node_crm_state_change_req;
 
 	mutex_init(&node->list_mutex);
 	INIT_LIST_HEAD(&node->free_ctx_list);
