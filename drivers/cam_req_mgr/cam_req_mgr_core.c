@@ -1714,6 +1714,19 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 		return -EINVAL;
 	}
 
+	/*
+	 * In case if the wq is scheduled while destroying session
+	 * the session mutex is already taken and will cause a
+	 * dead lock. To avoid further processing check link state
+	 * and exit.
+	 */
+	spin_lock_bh(&link->link_state_spin_lock);
+	if (link->state == CAM_CRM_LINK_STATE_IDLE) {
+		spin_unlock_bh(&link->link_state_spin_lock);
+		return -EPERM;
+	}
+	spin_unlock_bh(&link->link_state_spin_lock);
+
 	mutex_lock(&session->lock);
 	in_q = link->req.in_q;
 	/*
@@ -2899,6 +2912,13 @@ int cam_req_mgr_process_error(void *priv, void *data)
 			__cam_req_mgr_tbl_set_all_skip_cnt(&link->req.l_tbl);
 			in_q->rd_idx = idx;
 			in_q->slot[idx].status = CRM_SLOT_STATUS_REQ_ADDED;
+
+			if (link->sync_link[0]) {
+				in_q->slot[idx].sync_mode = 0;
+				__cam_req_mgr_inc_idx(&idx, 1,
+					link->req.l_tbl->num_slots);
+				in_q->slot[idx].sync_mode = 0;
+			}
 
 			/* The next req may also be applied */
 			idx = in_q->rd_idx;
