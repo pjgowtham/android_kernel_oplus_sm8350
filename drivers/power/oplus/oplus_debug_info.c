@@ -1993,7 +1993,7 @@ static int oplus_chg_chg_batt_capacity_jump_check(struct oplus_chg_chip *chip)
 	return 0;
 }
 
-void oplus_chg_wireless_udpate_param()
+void oplus_chg_wireless_udpate_param(void)
 {
 	struct oplus_wpc_chip *wpc_chip = NULL;
 	oplus_get_wpc_chip_handle(&wpc_chip);
