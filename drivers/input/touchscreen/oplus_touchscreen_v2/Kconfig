@@ -50,6 +50,12 @@ config TOUCHPANEL_NOTIFY
       Say Y here if you have touchscreen notify build into driver.
       Say M here if you have touchscreen notify as module.
 
+config TOUCHPANEL_FOCAL
+    tristate "TP Focal_IC enable or not for OPLUS"
+    ---help---
+    say Y to enable driver for Touchpanel using FOCALTECK_IC
+    Say M to enable driver for Touchpanel using FOCALTECK_IC as module.
+
 config TOUCHPANEL_SYNAPTICS
     tristate "TP Synaptics_IC enable or not for OPLUS"
     help
@@ -62,6 +68,9 @@ config TOUCHPANEL_ST
 	Say Y to enable driver for Touchpanel using st IC
 	Say M to enable driver for Touchpanel using st IC as module.
 
+if TOUCHPANEL_FOCAL
+source "drivers/input/touchscreen/oplus_touchscreen_v2/Focal/Kconfig"
+endif
 if TOUCHPANEL_SYNAPTICS
 source "drivers/input/touchscreen/oplus_touchscreen_v2/Synaptics/Kconfig"
 endif
