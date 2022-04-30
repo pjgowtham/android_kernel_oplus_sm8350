@@ -2125,7 +2125,7 @@ void oplus_chg_warp_mcu_error( int error ) {
 }
 
 /*add for wireless chg*/
-void oplus_chg_wireless_udpate_param()
+void oplus_chg_wireless_udpate_param(void)
 {
 	struct oplus_wpc_chip *wpc_chip = NULL;
 	oplus_get_wpc_chip_handle(&wpc_chip);
