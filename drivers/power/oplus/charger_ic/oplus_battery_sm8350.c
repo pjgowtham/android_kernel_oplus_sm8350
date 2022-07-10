@@ -2325,7 +2325,7 @@ static int battery_psy_get_prop(struct power_supply *psy,
 		} else if (!chip->authenticate) {
 			pval->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
 		} else {
-			pval->intval = chip->prop_status;
+			pval->intval = chip->prop_status == POWER_SUPPLY_STATUS_NOT_CHARGING ? POWER_SUPPLY_STATUS_DISCHARGING : chip->prop_status;
 		}
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
