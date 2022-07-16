@@ -15,7 +15,6 @@
 
 #include "dm-verity.h"
 #include "dm-verity-fec.h"
-#include <linux/delay.h>
 #include "dm-verity-verify-sig.h"
 #include <linux/module.h>
 #include <linux/reboot.h>
@@ -29,20 +28,17 @@
 
 #define DM_VERITY_MAX_CORRUPTED_ERRS	100
 
-#define DM_VERITY_OPT_DEVICE_WAIT       "device_wait"
 #define DM_VERITY_OPT_LOGGING		"ignore_corruption"
 #define DM_VERITY_OPT_RESTART		"restart_on_corruption"
 #define DM_VERITY_OPT_IGN_ZEROES	"ignore_zero_blocks"
 #define DM_VERITY_OPT_AT_MOST_ONCE	"check_at_most_once"
 
-#define DM_VERITY_OPTS_MAX		(4 + DM_VERITY_OPTS_FEC + \
+#define DM_VERITY_OPTS_MAX		(3 + DM_VERITY_OPTS_FEC + \
 					 DM_VERITY_ROOT_HASH_VERIFICATION_OPTS)
 
 static unsigned dm_verity_prefetch_cluster = DM_VERITY_DEFAULT_PREFETCH_SIZE;
 
 module_param_named(prefetch_cluster, dm_verity_prefetch_cluster, uint, S_IRUGO | S_IWUSR);
-
-static int dm_device_wait;
 
 struct dm_verity_prefetch_work {
 	struct work_struct work;
@@ -232,8 +228,10 @@ static int verity_handle_err(struct dm_verity *v, enum verity_block_type type,
 	/* Corruption should be visible in device status in all modes */
 	v->hash_failed = 1;
 
-	if (v->corrupted_errs >= DM_VERITY_MAX_CORRUPTED_ERRS)
+	if (v->corrupted_errs >= DM_VERITY_MAX_CORRUPTED_ERRS) {
+		DMERR("%s: reached maximum errors", v->data_dev->name);
 		goto out;
+	}
 
 	v->corrupted_errs++;
 
@@ -248,8 +246,8 @@ static int verity_handle_err(struct dm_verity *v, enum verity_block_type type,
 		BUG();
 	}
 
-	DMERR_LIMIT("%s: %s block %llu is corrupted", v->data_dev->name,
-		    type_str, block);
+	DMERR_LIMIT("%s: %s block %llu is corrupted, system_state %d"
+		, v->data_dev->name, type_str, block, system_state);
 
 	if (v->corrupted_errs == DM_VERITY_MAX_CORRUPTED_ERRS)
 		DMERR("%s: reached maximum errors", v->data_dev->name);
@@ -259,6 +257,10 @@ static int verity_handle_err(struct dm_verity *v, enum verity_block_type type,
 
 	kobject_uevent_env(&disk_to_dev(dm_disk(md))->kobj, KOBJ_CHANGE, envp);
 
+	/* corrupted_errs count had not reached limits */
+	return 0;
+
+
 out:
 	if (v->mode == DM_VERITY_MODE_LOGGING)
 		return 0;
@@ -267,7 +269,11 @@ out:
 #ifdef CONFIG_DM_VERITY_AVB
 		dm_verity_avb_error_handler();
 #endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FEEDBACK)
+		panic("dm-verity device corrupted");
+#else
 		kernel_restart("dm-verity device corrupted");
+#endif /* CONFIG_OPLUS_FEATURE_FEEDBACK */
 	}
 
 	return 1;
@@ -888,39 +894,6 @@ out:
 	return r;
 }
 
-
-static int verity_parse_pre_opt_args(struct dm_arg_set *as, struct dm_verity *v)
-{
-	int r;
-	unsigned int argc;
-	const char *arg_name;
-	struct dm_target *ti = v->ti;
-	static struct dm_arg _args[] = {
-		{0, DM_VERITY_OPTS_MAX, "Invalid number of feature args"},
-	};
-
-	r = dm_read_arg_group(_args, as, &argc, &ti->error);
-	if (r)
-		return -EINVAL;
-
-	if (!argc)
-		return 0;
-
-	do {
-		arg_name = dm_shift_arg(as);
-		argc--;
-
-		if (!strcasecmp(arg_name, DM_VERITY_OPT_DEVICE_WAIT)) {
-
-			dm_device_wait = 1;
-			continue;
-		}
-
-	} while (argc);
-
-	return 0;
-}
-
 static int verity_parse_opt_args(struct dm_arg_set *as, struct dm_verity *v,
 				 struct dm_verity_sig_opts *verify_args)
 {
@@ -971,10 +944,6 @@ static int verity_parse_opt_args(struct dm_arg_set *as, struct dm_verity *v,
 			if (r)
 				return r;
 			continue;
-
-		} else if (!strcasecmp(arg_name, DM_VERITY_OPT_DEVICE_WAIT)) {
-			continue;
-
 		} else if (verity_verify_is_sig_opt_arg(arg_name)) {
 			r = verity_verify_sig_parse_opt_args(as, v,
 							     verify_args,
@@ -1043,15 +1012,6 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		goto bad;
 	}
 
-	/* Optional parameters which are parsed pre required args. */
-	if ((argc - 10)) {
-		as.argc = argc - 10;
-		as.argv = argv + 10;
-		r = verity_parse_pre_opt_args(&as, v);
-		if (r < 0)
-			goto bad;
-	}
-
 	if (sscanf(argv[0], "%u%c", &num, &dummy) != 1 ||
 	    num > 1) {
 		ti->error = "Invalid version";
@@ -1060,25 +1020,14 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	}
 	v->version = num;
 
-retry_dev1:
-
 	r = dm_get_device(ti, argv[1], FMODE_READ, &v->data_dev);
 	if (r) {
-		if (r == -ENODEV && dm_device_wait) {
-			msleep(100);
-			goto retry_dev1;
-		}
 		ti->error = "Data device lookup failed";
 		goto bad;
 	}
 
-retry_dev2:
 	r = dm_get_device(ti, argv[2], FMODE_READ, &v->hash_dev);
 	if (r) {
-		if (r == -ENODEV && dm_device_wait) {
-			msleep(100);
-			goto retry_dev2;
-		}
 		ti->error = "Hash device lookup failed";
 		goto bad;
 	}
