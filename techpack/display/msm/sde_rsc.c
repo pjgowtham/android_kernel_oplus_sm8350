@@ -352,8 +352,6 @@ static u32 sde_rsc_timer_calculate(struct sde_rsc_priv *rsc,
 			line_time_ns, prefill_time_ns);
 	pr_debug("static wakeup time:%lld cxo:%u\n", total, cxo_period_ns);
 
-	SDE_EVT32(rsc->cmd_config.fps, rsc->cmd_config.vtotal, total);
-
 	pdc_backoff_time_ns = rsc_backoff_time_ns;
 	rsc_backoff_time_ns = div_u64(rsc_backoff_time_ns, cxo_period_ns);
 	rsc->timer_config.rsc_backoff_time_ns = (u32) rsc_backoff_time_ns;
@@ -1109,7 +1107,7 @@ end:
 }
 EXPORT_SYMBOL(sde_rsc_client_trigger_vote);
 
-#if defined(CONFIG_DEBUG_FS)
+//#if defined(CONFIG_DEBUG_FS)
 void sde_rsc_debug_dump(u32 mux_sel)
 {
 	struct sde_rsc_priv *rsc;
@@ -1123,6 +1121,7 @@ void sde_rsc_debug_dump(u32 mux_sel)
 		rsc->hw_ops.debug_dump(rsc, mux_sel);
 }
 
+#if defined(CONFIG_DEBUG_FS)
 static int _sde_debugfs_status_show(struct seq_file *s, void *data)
 {
 	struct sde_rsc_priv *rsc;
