@@ -74,3 +74,7 @@ extra-y					+= $(head-y) vmlinux.lds
 ifeq ($(CONFIG_DEBUG_EFI),y)
 AFLAGS_head.o += -DVMLINUX_PATH="\"$(realpath $(objtree)/vmlinux)\""
 endif
+
+#ifdef CONFIG_OPPO_SECURE_GUARD
+obj-$(CONFIG_OPLUS_KERNEL_SECURE_FEATURE)    +=  secureguard/
+#endif /* CONFIG_OPPO_SECURE_GUARD */
