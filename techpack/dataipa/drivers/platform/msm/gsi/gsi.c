@@ -1367,6 +1367,10 @@ int gsi_register_device(struct gsi_per_props *props, unsigned long *dev_hdl)
 		gsi_writel(0, gsi_ctx->base +
 			GSI_EE_n_ERROR_LOG_OFFS(gsi_ctx->per.ee));
 
+	/* Reset to zero scratch_1 register*/
+	gsi_writel(0, gsi_ctx->base +
+			GSI_EE_n_CNTXT_SCRATCH_1_OFFS(gsi_ctx->per.ee));
+
 	if (running_emulation) {
 		/*
 		 * Set up the emulator's interrupt controller...
@@ -4832,12 +4836,18 @@ int gsi_flow_control_ee(unsigned int chan_idx, unsigned int ee,
 		msecs_to_jiffies(GSI_CMD_TIMEOUT));
 	if (res == 0) {
 		GSIERR("chan_idx=%u ee=%u timed out\n", chan_idx, ee);
+		//#ifndef OPLUS_BUG_STABILITY
+		//res = -GSI_STATUS_TIMED_OUT;
+		//GSI_ASSERT();
+		//goto free_lock;
+		//#else OPLUS_BUG_STABILITY
 		GSIERR("GSI_EE_n_CNTXT_GLOB_IRQ_EN_OFFS = 0x%x\n",
 				gsi_readl(gsi_ctx->base +
 				GSI_EE_n_CNTXT_GLOB_IRQ_EN_OFFS(gsi_ctx->per.ee)));
 		GSIERR("GSI_EE_n_CNTXT_GLOB_IRQ_STTS_OFFS IRQ type = 0x%x\n",
 				gsi_readl(gsi_ctx->base +
 				GSI_EE_n_CNTXT_GLOB_IRQ_STTS_OFFS(gsi_ctx->per.ee)));
+		//#endif OPLUS_BUG_STABILITY
 	}
 
 	gsi_ctx->scratch.word0.val = gsi_readl(gsi_ctx->base +

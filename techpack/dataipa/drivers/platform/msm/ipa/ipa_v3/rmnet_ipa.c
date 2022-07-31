@@ -1204,11 +1204,6 @@ static netdev_tx_t ipa3_wwan_xmit(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_OK;
 	}
 
-	if (unlikely(skb == NULL)) {
-		IPAWANERR_RL("unexpected NULL data\n");
-		return NETDEV_TX_BUSY;
-	}
-
 	if (skb->protocol != htons(ETH_P_MAP)) {
 		IPAWANDBG_LOW
 		("SW filtering out none QMAP packet received from %s",
@@ -2237,14 +2232,16 @@ static int rmnet_ipa_send_coalesce_notification(uint8_t qmap_id,
 	if (!coalesce_info)
 		return -ENOMEM;
 
-	coalesce_info->qmap_id = qmap_id;
-	coalesce_info->tcp_enable = tcp;
-	coalesce_info->udp_enable = udp;
-	msg_meta.msg_len = sizeof(struct ipa_coalesce_info);
-	if (enable)
+	if (enable) {
+		coalesce_info->qmap_id = qmap_id;
+		coalesce_info->tcp_enable = tcp;
+		coalesce_info->udp_enable = udp;
 		msg_meta.msg_type = IPA_COALESCE_ENABLE;
-	else
+		msg_meta.msg_len = sizeof(struct ipa_coalesce_info);
+	} else {
 		msg_meta.msg_type = IPA_COALESCE_DISABLE;
+		msg_meta.msg_len = sizeof(struct ipa_coalesce_info);
+	}
 	rc = ipa_send_msg(&msg_meta, coalesce_info, ipa3_wwan_msg_free_cb);
 	if (rc) {
 		IPAWANERR("ipa_send_msg failed: %d\n", rc);
@@ -2965,9 +2962,6 @@ static int ipa3_lcl_mdm_ssr_notifier_cb(struct notifier_block *this,
 	}
 
 	switch (code) {
-#if IS_ENABLED(CONFIG_DEEPSLEEP)
-	case SUBSYS_BEFORE_DS_ENTRY:
-#endif
 	case SUBSYS_BEFORE_SHUTDOWN:
 		IPAWANINFO("IPA received MPSS BEFORE_SHUTDOWN\n");
 		/*Stop netdev first to stop queueing pkts to Q6 */
@@ -2989,9 +2983,6 @@ static int ipa3_lcl_mdm_ssr_notifier_cb(struct notifier_block *this,
 		ipa3_odl_pipe_cleanup(true);
 		IPAWANINFO("IPA BEFORE_SHUTDOWN handling is complete\n");
 		break;
-#if IS_ENABLED(CONFIG_DEEPSLEEP)
-	case SUBSYS_AFTER_DS_ENTRY:
-#endif
 	case SUBSYS_AFTER_SHUTDOWN:
 		IPAWANINFO("IPA Received MPSS AFTER_SHUTDOWN\n");
 		if (atomic_read(&rmnet_ipa3_ctx->is_ssr) &&
@@ -3003,9 +2994,6 @@ static int ipa3_lcl_mdm_ssr_notifier_cb(struct notifier_block *this,
 
 		IPAWANINFO("IPA AFTER_SHUTDOWN handling is complete\n");
 		break;
-#if IS_ENABLED(CONFIG_DEEPSLEEP)
-	case SUBSYS_BEFORE_DS_EXIT:
-#endif
 	case SUBSYS_BEFORE_POWERUP:
 		IPAWANINFO("IPA received MPSS BEFORE_POWERUP\n");
 		if (atomic_read(&rmnet_ipa3_ctx->is_ssr)) {
@@ -3018,9 +3006,6 @@ static int ipa3_lcl_mdm_ssr_notifier_cb(struct notifier_block *this,
 		ipa3_reset_freeze_vote();
 		IPAWANINFO("IPA BEFORE_POWERUP handling is complete\n");
 		break;
-#if IS_ENABLED(CONFIG_DEEPSLEEP)
-	case SUBSYS_AFTER_DS_EXIT:
-#endif
 	case SUBSYS_AFTER_POWERUP:
 		IPAWANINFO("IPA received MPSS AFTER_POWERUP\n");
 		if (!atomic_read(&rmnet_ipa3_ctx->is_initialized) &&
@@ -4184,8 +4169,7 @@ int rmnet_ipa3_query_tethering_stats_all(
 	} else if (upstream_type == IPA_UPSTEAM_WLAN) {
 		IPAWANDBG_LOW(" query wifi-backhaul stats\n");
 		if (ipa3_ctx_get_type(IPA_HW_TYPE) < IPA_HW_v4_5 ||
-			!ipa3_ctx_get_flag(IPA_HW_STATS_EN) ||
-			ipa3_ctx->fnr_stats_not_supported) {
+			!ipa3_ctx_get_flag(IPA_HW_STATS_EN)) {
 			IPAWANDBG("hw version %d,hw_stats.enabled %d\n",
 				ipa3_ctx_get_type(IPA_HW_TYPE),
 				ipa3_ctx_get_flag(IPA_HW_STATS_EN));

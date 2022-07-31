@@ -568,6 +568,21 @@ int ipa3_conn_wdi3_pipes(struct ipa_wdi_conn_in_params *in,
 	else
 		IPADBG("wdi_notify is null\n");
 #endif
+	/* start uC event ring */
+	if ((ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5 &&
+		ipa3_ctx->ipa_hw_type != IPA_HW_v4_11) ||
+		ipa3_ctx->is_bw_monitor_supported) {
+		if (ipa3_ctx->uc_ctx.uc_loaded &&
+			!ipa3_ctx->uc_ctx.uc_event_ring_valid) {
+			if (ipa3_uc_setup_event_ring()) {
+				IPAERR("failed to set uc_event ring\n");
+				return -EFAULT;
+			}
+		} else
+			IPAERR("uc-loaded %d, ring-valid %d\n",
+			ipa3_ctx->uc_ctx.uc_loaded,
+			ipa3_ctx->uc_ctx.uc_event_ring_valid);
+	}
 
 	/* start uC event ring */
 	if ((ipa3_ctx->ipa_hw_type >= IPA_HW_v4_5 &&
