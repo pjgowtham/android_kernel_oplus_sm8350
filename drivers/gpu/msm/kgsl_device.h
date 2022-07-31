@@ -320,6 +320,11 @@ struct kgsl_device {
 	u32 speed_bin;
 	/** @gmu_fault: Set when a gmu or rgmu fault is encountered */
 	bool gmu_fault;
+	/** @timelines: xarray for the timelines */
+	#if IS_ENABLED(CONFIG_DRM_MSM)
+	bool snapshot_control;
+	int snapshotfault;
+	#endif
 	/** @timelines: Iterator for assigning IDs to timelines */
 	struct idr timelines;
 	/** @timelines_lock: Spinlock to protect the timelines idr */
@@ -524,6 +529,10 @@ struct kgsl_snapshot {
 	bool first_read;
 	bool recovered;
 	struct kgsl_device *device;
+
+	#if IS_ENABLED(CONFIG_DRM_MSM)
+	char snapshot_hashid[96];
+	#endif
 };
 
 /**

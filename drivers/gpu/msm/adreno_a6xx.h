@@ -283,8 +283,10 @@ static inline bool a6xx_is_smmu_stalled(struct kgsl_device *device)
  *
  * Disable the regulator and wait @timeout milliseconds for it to enter the
  * disabled state.
+ *
+ * Return: True if the regulator was disabled or false if it timed out
  */
-void a6xx_cx_regulator_disable_wait(struct regulator *reg,
+bool a6xx_cx_regulator_disable_wait(struct regulator *reg,
 				struct kgsl_device *device, u32 timeout);
 
 /* Preemption functions */
