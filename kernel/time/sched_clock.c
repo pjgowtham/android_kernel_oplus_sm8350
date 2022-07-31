@@ -281,11 +281,26 @@ static u64 notrace suspended_sched_clock_read(void)
 	return cd.read_data[seq & 1].epoch_cyc;
 }
 
+#if defined(OPLUS_FEATURE_POWERINFO_STANDBY) && defined(CONFIG_OPLUS_WAKELOCK_PROFILER)
+#define MSM_ARCH_TIMER_FREQ 19200000
+static u64 suspend_cycles;
+static u64 resume_cycles;
+static inline u64 get_time_in_msec(u64 counter)
+{
+	do_div(counter, MSM_ARCH_TIMER_FREQ/MSEC_PER_SEC);
+	return counter;
+}
+#endif
+
 int sched_clock_suspend(void)
 {
 	struct clock_read_data *rd = &cd.read_data[0];
 
 	update_sched_clock();
+	#if defined(OPLUS_FEATURE_POWERINFO_STANDBY) && defined(CONFIG_OPLUS_WAKELOCK_PROFILER)
+	suspend_cycles = rd->epoch_cyc;
+	pr_info("info : last resume duration is %17llu(ms)\n", suspend_cycles > resume_cycles ?  get_time_in_msec(suspend_cycles - resume_cycles) : 0 );
+	#endif
 
 #ifdef CONFIG_PRINT_SUSPEND_EPOCH_QGKI
 	suspend_ns = rd->epoch_ns;
@@ -304,6 +319,10 @@ void sched_clock_resume(void)
 	struct clock_read_data *rd = &cd.read_data[0];
 
 	rd->epoch_cyc = cd.actual_read_sched_clock();
+	#if defined(OPLUS_FEATURE_POWERINFO_STANDBY) && defined(CONFIG_OPLUS_WAKELOCK_PROFILER)
+	resume_cycles = rd->epoch_cyc;
+	pr_info("info : last sleep  duration is %17llu(ms)\n", resume_cycles > suspend_cycles ?  get_time_in_msec(resume_cycles - suspend_cycles) : 0 );
+	#endif
 	hrtimer_start(&sched_clock_timer, cd.wrap_kt, HRTIMER_MODE_REL_HARD);
 #ifdef CONFIG_PRINT_SUSPEND_EPOCH_QGKI
 	resume_cycles = rd->epoch_cyc;

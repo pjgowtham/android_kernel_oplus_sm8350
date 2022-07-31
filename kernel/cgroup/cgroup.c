@@ -229,6 +229,7 @@ static const char *cgroup_opt_feature_names[OPT_FEATURE_COUNT] = {
 
 static u16 cgroup_feature_disable_mask __read_mostly;
 
+
 static int cgroup_apply_control(struct cgroup *cgrp);
 static void cgroup_finalize_control(struct cgroup *cgrp, int ret);
 static void css_task_iter_skip(struct css_task_iter *it,
@@ -4037,7 +4038,6 @@ static int cgroup_init_cftypes(struct cgroup_subsys *ss, struct cftype *cfts)
 
 		if ((cft->flags & CFTYPE_PRESSURE) && !cgroup_psi_enabled())
 			continue;
-
 		if (cft->seq_start)
 			kf_ops = &cgroup_kf_ops;
 		else
@@ -6519,7 +6519,6 @@ static ssize_t show_delegatable_files(struct cftype *files, char *buf,
 	for (cft = files; cft && cft->name[0] != '\0'; cft++) {
 		if (!(cft->flags & CFTYPE_NS_DELEGATABLE))
 			continue;
-
 		if ((cft->flags & CFTYPE_PRESSURE) && !cgroup_psi_enabled())
 			continue;
 

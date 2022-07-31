@@ -206,6 +206,11 @@ extern cpumask_t asym_cap_sibling_cpus;
 #define TASK_ON_RQ_QUEUED	1
 #define TASK_ON_RQ_MIGRATING	2
 
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+//#ifdef CONFIG_UXCHAIN_V2
+extern int sysctl_uxchain_v2;
+#endif
+
 extern __read_mostly int scheduler_running;
 
 extern unsigned long calc_load_update;
@@ -1153,6 +1158,9 @@ struct rq {
 	int			idle_state_idx;
 #endif
 #endif
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	struct list_head ux_thread_list;
+#endif /* defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST) */
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -2234,10 +2242,15 @@ static inline unsigned long capacity_orig_of(int cpu)
 {
 	return cpu_rq(cpu)->cpu_capacity_orig;
 }
-
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+extern void sf_task_util_record(struct task_struct *p);
+#endif
 static inline unsigned long task_util(struct task_struct *p)
 {
 #ifdef CONFIG_SCHED_WALT
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	sf_task_util_record(p);
+#endif
 	return p->wts.demand_scaled;
 #endif
 	return READ_ONCE(p->se.avg.util_avg);
