@@ -446,6 +446,7 @@ static int qpnp_vibrator_ldo_probe(struct platform_device *pdev)
 	struct vib_ldo_chip *chip;
 	int i, ret;
 	u32 base;
+	u8 temp = 0;
 
 	ret = of_property_read_u32(of_node, "reg", &base);
 	if (ret < 0) {
@@ -462,7 +463,12 @@ static int qpnp_vibrator_ldo_probe(struct platform_device *pdev)
 		pr_err("couldn't get parent's regmap\n");
 		return -EINVAL;
 	}
-
+	ret = regmap_bulk_read(chip->regmap, 0xdf05, &temp,1);
+	if(ret < 0)
+		return -ENODEV;
+	else if(temp !=0x7E)
+		return -ENODEV;
+		
 	ret = qpnp_vib_parse_dt(&pdev->dev, chip);
 	if (ret < 0) {
 		pr_err("couldn't parse device tree, ret=%d\n", ret);

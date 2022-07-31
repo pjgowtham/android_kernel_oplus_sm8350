@@ -715,9 +715,6 @@ static int geni_se_rmv_ab_ib(struct geni_se_device *geni_se_dev,
 	if (geni_se_dev->vectors == NULL)
 		return 0;
 
-	if (rsc->skip_bw_vote)
-		return 0;
-
 	if (unlikely(list_empty(&rsc->ab_list) || list_empty(&rsc->ib_list)))
 		return -EINVAL;
 
@@ -863,9 +860,6 @@ static int geni_se_add_ab_ib(struct geni_se_device *geni_se_dev,
 	int ret = 0;
 
 	if (geni_se_dev->vectors == NULL)
-		return 0;
-
-	if (rsc->skip_bw_vote)
 		return 0;
 
 	mutex_lock(&geni_se_dev->geni_dev_lock);
@@ -1688,6 +1682,9 @@ static int geni_se_iommu_probe(struct device *dev)
 	return 0;
 }
 
+#if defined(OPLUS_FEATURE_POWERINFO_FTM) && defined(CONFIG_OPLUS_POWERINFO_FTM)
+extern bool ext_boot_with_console(void);
+#endif
 static int geni_se_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -1773,6 +1770,11 @@ static int geni_se_probe(struct platform_device *pdev)
 	 * console UART as dummy consumer of ICC to get rid of this HACK
 	 */
 #if IS_ENABLED(CONFIG_SERIAL_MSM_GENI_CONSOLE)
+	#if defined(OPLUS_FEATURE_POWERINFO_FTM) && defined(CONFIG_OPLUS_POWERINFO_FTM)
+	if(!ext_boot_with_console()){
+		goto oplus_fast_forward;
+	}
+	#endif
 	geni_se_dev->wrapper_rsc.wrapper_dev = dev;
 	geni_se_dev->wrapper_rsc.ctrl_dev = dev;
 
@@ -1790,6 +1792,11 @@ static int geni_se_probe(struct platform_device *pdev)
 				ret);
 		return ret;
 	}
+
+#if defined(OPLUS_FEATURE_POWERINFO_FTM) && defined(CONFIG_OPLUS_POWERINFO_FTM)
+oplus_fast_forward:
+#endif
+
 #endif
 
 	ret = of_platform_populate(dev->of_node, geni_se_dt_match, NULL, dev);

@@ -247,8 +247,7 @@ static void qcom_cc_set_critical(struct device *dev, struct qcom_cc *cc)
 		if (i >= cc->num_rclks)
 			continue;
 
-		if (cc->rclks[i])
-			cc->rclks[i]->flags |= QCOM_CLK_IS_CRITICAL;
+		cc->rclks[i]->flags |= QCOM_CLK_IS_CRITICAL;
 	}
 
 	of_property_for_each_u32(dev->of_node, "qcom,critical-devices", prop, p, i) {
@@ -266,8 +265,7 @@ static void qcom_cc_set_critical(struct device *dev, struct qcom_cc *cc)
 			if (args.np != dev->of_node || clock_idx >= cc->num_rclks)
 				continue;
 
-			if (cc->rclks[clock_idx])
-				cc->rclks[clock_idx]->flags |= QCOM_CLK_IS_CRITICAL;
+			cc->rclks[clock_idx]->flags |= QCOM_CLK_IS_CRITICAL;
 			of_node_put(args.np);
 		}
 

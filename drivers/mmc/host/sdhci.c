@@ -33,6 +33,9 @@
 
 #include "sdhci.h"
 
+#ifdef OPLUS_FEATURE_SDCARD_INFO
+#include "sdInfo/sdinfo.h"
+#endif
 #define DRIVER_NAME "sdhci"
 
 #define DBG(f, x...) \
@@ -52,6 +55,14 @@ static bool sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 
 void sdhci_dumpregs(struct sdhci_host *host)
 {
+#ifdef CONFIG_EMMC_SDCARD_OPTIMIZE
+	static int flag = 0;
+	if(!flag)
+		    flag++;
+	else
+		    return;
+#endif
+
 	mmc_log_string(host->mmc,
 	"BLOCK_SIZE=0x%08x BLOCK_COUNT=0x%08x COMMAND=0x%08x INT_STATUS=0x%08x INT_ENABLE=0x%08x SIGNAL_ENABLE=0x%08x\n",
 	sdhci_readw(host, SDHCI_BLOCK_SIZE),
@@ -1954,6 +1965,23 @@ void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	unsigned long flags;
 	bool present;
 
+#ifdef OPLUS_FEATURE_SDCARD_INFO
+	static long count = 0;
+
+	if (( SET_SDCARD_QUICK_RETURN == get_sdcard_remove()) && mmc->card && mmc_card_sd(mmc->card)) {
+		if (mrq && mrq->cmd && ((mrq->cmd->opcode == MMC_READ_SINGLE_BLOCK) || (mrq->cmd->opcode == MMC_READ_MULTIPLE_BLOCK) || (mrq->cmd->opcode == MMC_WRITE_BLOCK) || (mrq->cmd->opcode == MMC_WRITE_MULTIPLE_BLOCK))) {
+			if (count%6 == 0)
+				pr_err("mmc card(sd) error, cmd: %u arg: %u\n", mrq->cmd->opcode, mrq->cmd->arg);
+			count += 1;
+			mrq->cmd->error = (unsigned int)-EIO;
+			if (mrq->data)
+				mrq->data->error = -EIO;
+			mmc_request_done(host->mmc, mrq);
+			return;
+		}
+	}
+#endif
+
 	/* Firstly check card presence */
 	present = mmc->ops->get_cd(mmc);
 
@@ -2999,6 +3027,9 @@ static void sdhci_timeout_data_timer(struct timer_list *t)
 			host->cmd->error = -ETIMEDOUT;
 			sdhci_finish_mrq(host, host->cmd->mrq);
 		}
+#ifdef OPLUS_FEATURE_SDCARD_INFO
+		sdinfo.data_timeout_count += 1;
+#endif
 	}
 
 	spin_unlock_irqrestore(&host->lock, flags);

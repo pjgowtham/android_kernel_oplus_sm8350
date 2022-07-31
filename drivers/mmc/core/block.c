@@ -57,6 +57,9 @@
 #include "mmc_ops.h"
 #include "quirks.h"
 #include "sd_ops.h"
+#ifdef OPLUS_FEATURE_SDCARD_INFO
+#include "../host/sdInfo/sdinfo.h"
+#endif
 
 MODULE_ALIAS("mmc:block");
 #ifdef MODULE_PARAM_PREFIX
@@ -1731,31 +1734,31 @@ static void mmc_blk_read_single(struct mmc_queue *mq, struct request *req)
 	struct mmc_card *card = mq->card;
 	struct mmc_host *host = card->host;
 	blk_status_t error = BLK_STS_OK;
-	int retries = 0;
 
 	do {
 		u32 status;
 		int err;
+		int retries = 0;
 
-		mmc_blk_rw_rq_prep(mqrq, card, 1, mq);
+		while (retries++ <= MMC_READ_SINGLE_RETRIES) {
+			mmc_blk_rw_rq_prep(mqrq, card, 1, mq);
 
-		mmc_wait_for_req(host, mrq);
+			mmc_wait_for_req(host, mrq);
 
-		err = mmc_send_status(card, &status);
-		if (err)
-			goto error_exit;
-
-		if (!mmc_host_is_spi(host) &&
-		    !mmc_blk_in_tran_state(status)) {
-			err = mmc_blk_fix_state(card, req);
+			err = mmc_send_status(card, &status);
 			if (err)
 				goto error_exit;
+
+			if (!mmc_host_is_spi(host) &&
+			    !mmc_blk_in_tran_state(status)) {
+				err = mmc_blk_fix_state(card, req);
+				if (err)
+					goto error_exit;
+			}
+
+			if (!mrq->cmd->error)
+				break;
 		}
-
-		if (mrq->cmd->error && retries++ < MMC_READ_SINGLE_RETRIES)
-			continue;
-
-		retries = 0;
 
 		if (mrq->cmd->error ||
 		    mrq->data->error ||
@@ -2173,6 +2176,19 @@ static void mmc_blk_mq_req_done(struct mmc_request *mrq)
 	struct mmc_queue *mq = q->queuedata;
 	struct mmc_host *host = mq->card->host;
 	unsigned long flags;
+
+#ifdef OPLUS_FEATURE_SDCARD_INFO
+	if (host->card && mmc_card_sd(host->card)) {
+		if ((mrq->cmd && (mrq->cmd->error == -ETIMEDOUT)) || (mrq->stop && (mrq->stop->error == -ETIMEDOUT)) || (mrq->sbc && (mrq->sbc->error == -ETIMEDOUT)))
+			sdinfo.cmd_timeout_count += 1;
+		else if ((mrq->cmd && (mrq->cmd->error == -EILSEQ)) || (mrq->stop && (mrq->stop->error == -EILSEQ)) || (mrq->sbc && (mrq->sbc->error == -EILSEQ)))
+			sdinfo.cmd_crc_err_count += 1;
+		else if (mrq->data && (mrq->data->error == -ETIMEDOUT))
+			sdinfo.data_timeout_int_count +=1;
+		else if (mrq->data && (mrq->data->error == -EILSEQ))
+			sdinfo.data_crc_err_count += 1;
+	}
+#endif
 
 	if (!mmc_host_done_complete(host)) {
 		bool waiting;
@@ -3000,8 +3016,10 @@ static int mmc_blk_probe(struct mmc_card *card)
 	/*
 	 * Check that the card supports the command class(es) we need.
 	 */
+#ifndef CONFIG_EMMC_SDCARD_OPTIMIZE
 	if (!(card->csd.cmdclass & CCC_BLOCK_READ))
 		return -ENODEV;
+#endif
 
 	mmc_fixup_device(card, mmc_blk_fixups);
 
@@ -3058,6 +3076,17 @@ static int mmc_blk_probe(struct mmc_card *card)
 	return 0;
 }
 
+#ifdef CONFIG_EMMC_SDCARD_OPTIMIZE
+char *capacity_string(struct mmc_card *card){
+	static char cap_str[10] = "unknown";
+	struct mmc_blk_data *md = (struct mmc_blk_data *)card->dev.driver_data;
+	if(md==NULL){
+		return 0;
+	}
+	string_get_size((u64)get_capacity(md->disk), 512, STRING_UNITS_2, cap_str, sizeof(cap_str));
+	return cap_str;
+}
+#endif
 static void mmc_blk_remove(struct mmc_card *card)
 {
 	struct mmc_blk_data *md = dev_get_drvdata(&card->dev);

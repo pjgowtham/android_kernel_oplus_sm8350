@@ -51,6 +51,9 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 
+#ifdef OPLUS_FEATURE_SDCARD_INFO
+#include "../host/sdInfo/sdinfo.h"
+#endif
 /* The max erase timeout, used when host->max_busy_timeout isn't specified */
 #define MMC_ERASE_TIMEOUT_MS	(60 * 1000) /* 60 s */
 #define SD_DISCARD_TIMEOUT_MS	(250)
@@ -1230,6 +1233,19 @@ void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq)
 				       mmc_hostname(host), __func__);
 			}
 		}
+
+#ifdef OPLUS_FEATURE_SDCARD_INFO
+		if (host && host->card && mmc_card_sd(host->card)) {
+			if ((mrq->cmd && (mrq->cmd->error == -ETIMEDOUT)) || (mrq->stop && (mrq->stop->error == -ETIMEDOUT)) || (mrq->sbc && (mrq->sbc->error == -ETIMEDOUT)))
+				sdinfo.cmd_timeout_count += 1;
+			else if ((mrq->cmd && (mrq->cmd->error == -EILSEQ)) || (mrq->stop && (mrq->stop->error == -EILSEQ)) || (mrq->sbc && (mrq->sbc->error == -EILSEQ)))
+				sdinfo.cmd_crc_err_count += 1;
+			else if (mrq->data && (mrq->data->error == -ETIMEDOUT))
+				sdinfo.data_timeout_int_count +=1;
+			else if (mrq->data && (mrq->data->error == -EILSEQ))
+				sdinfo.data_crc_err_count += 1;
+		}
+#endif
 		if (!cmd->error || !cmd->retries ||
 		    mmc_card_removed(host->card))
 			break;
@@ -3231,7 +3247,11 @@ void mmc_stop_host(struct mmc_host *host)
 	}
 
 	host->rescan_disable = 1;
+#ifndef CONFIG_EMMC_SDCARD_OPTIMIZE
 	cancel_delayed_work_sync(&host->detect);
+#else
+	cancel_delayed_work(&host->detect);
+#endif
 
 	/* clear pm flags now and let card drivers set them as needed */
 	host->pm_flags = 0;
