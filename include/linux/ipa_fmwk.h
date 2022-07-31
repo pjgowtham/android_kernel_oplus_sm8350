@@ -135,10 +135,6 @@ struct ipa_core_data {
 		void *user_data3);
 
 	int (*ipa_unregister_rmnet_ll_cb)(void);
-	int (*ipa_register_notifier)(void *fn_ptr);
-	int (*ipa_unregister_notifier)(void *fn_ptr);
-	int (*ipa_add_socksv5_conn)(struct ipa_socksv5_info *info);
-	int (*ipa_del_socksv5_conn)(uint32_t handle);
 };
 
 struct ipa_usb_data {
@@ -166,8 +162,6 @@ struct ipa_usb_data {
 
 	int (*ipa_usb_xdci_resume)(u32 ul_clnt_hdl, u32 dl_clnt_hdl,
 		enum ipa_usb_teth_prot teth_prot);
-
-	bool (*ipa_usb_is_teth_prot_connected)(enum ipa_usb_teth_prot usb_teth_prot);
 };
 
 struct ipa_wdi3_data {
@@ -205,8 +199,6 @@ struct ipa_wdi3_data {
 	int (*ipa_wdi_sw_stats)(struct ipa_wdi_tx_info *info);
 
 	int (*ipa_get_wdi_version)(void);
-
-	bool (*ipa_wdi_is_tx1_used)(void);
 };
 
 struct ipa_qdss_data {
@@ -332,12 +324,9 @@ struct ipa_eth_data {
 	int (*ipa_eth_client_set_perf_profile)(struct ipa_eth_client *client,
 		struct ipa_eth_perf_profile *profile);
 
-	enum ipa_client_type (*ipa_eth_get_ipa_client_type_from_eth_type)(
-		enum ipa_eth_client_type eth_client_type,
-		enum ipa_eth_pipe_direction dir);
+	int (*ipa_eth_client_conn_evt)(struct ipa_ecm_msg *msg);
 
-	bool (*ipa_eth_client_exist)(
-		enum ipa_eth_client_type eth_client_type, int inst_id);
+	int (*ipa_eth_client_disconn_evt)(struct ipa_ecm_msg *msg);
 };
 
 #if IS_ENABLED(CONFIG_IPA3)

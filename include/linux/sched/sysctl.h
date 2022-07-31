@@ -62,8 +62,6 @@ extern unsigned int sysctl_sched_prefer_spread;
 extern unsigned int sysctl_walt_rtg_cfs_boost_prio;
 extern unsigned int sysctl_walt_low_latency_task_threshold;
 extern unsigned int sysctl_sched_sync_hint_enable;
-extern unsigned int sysctl_walt_cpu_high_irqload;
-extern unsigned int sysctl_sched_asym_cap_sibling_freq_match_en;
 
 extern int
 walt_proc_group_thresholds_handler(struct ctl_table *table, int write,
@@ -89,10 +87,6 @@ extern int sched_boost_handler(struct ctl_table *table, int write,
 
 extern int sched_busy_hyst_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *lenp, loff_t *ppos);
-
-extern int walt_high_irqload_handler(struct ctl_table *table, int write,
-			void __user *buffer, size_t *lenp, loff_t *ppos);
-
 #endif
 
 enum sched_tunable_scaling {
@@ -170,6 +164,11 @@ extern int sched_energy_aware_handler(struct ctl_table *table, int write,
 				 void __user *buffer, size_t *lenp,
 				 loff_t *ppos);
 #endif
+
+#if defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+extern int sysctl_sched_assist_scene_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *lenp, loff_t *ppos);
+#endif /* defined(OPLUS_FEATURE_SCHED_ASSIST) && defined(CONFIG_OPLUS_FEATURE_SCHED_ASSIST) */
 
 #define LIB_PATH_LENGTH 512
 extern char sched_lib_name[LIB_PATH_LENGTH];

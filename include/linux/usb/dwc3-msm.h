@@ -164,6 +164,17 @@ static bool __maybe_unused usb_get_remote_wakeup_status(struct usb_gadget *gadge
 { return false; }
 #endif
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#if IS_ENABLED(CONFIG_OPLUS_CHG)
+enum oplus_dwc3_notify_event {
+	DWC3_ENUM_DONE,
+};
+
+extern void oplus_dwc3_set_notifier(void (*notify)(enum oplus_dwc3_notify_event event));
+extern int oplus_dwc3_notify_event(enum oplus_dwc3_notify_event event);
+#endif
+#endif
+
 #if IS_ENABLED(CONFIG_USB_F_GSI)
 void rmnet_gsi_update_in_buffer_mem_type(struct usb_function *f, bool use_tcm);
 #else

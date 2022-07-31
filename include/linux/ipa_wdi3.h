@@ -250,12 +250,6 @@ struct ipa_wdi_perf_profile {
 int ipa_wdi_init(struct ipa_wdi_init_in_params *in,
 	struct ipa_wdi_init_out_params *out);
 
-/** ipa_wdi_is_tx1_used - return if DBS mode is active
- *
- * @Return bool
- */
-bool ipa_wdi_is_tx1_used(void);
-
 /**
  * ipa_wdi_cleanup - Client should call this function to
  * clean up WDI IPA offload data path
@@ -401,11 +395,6 @@ static inline int ipa_wdi_init(struct ipa_wdi_init_in_params *in,
 }
 
 static inline int ipa_get_wdi_version(void)
-{
-	return -EPERM;
-}
-
-static inline int ipa_wdi_is_tx1_used(void)
 {
 	return -EPERM;
 }

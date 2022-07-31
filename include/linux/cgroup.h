@@ -742,6 +742,7 @@ static inline bool cgroup_psi_enabled(void)
 	return false;
 }
 
+
 static inline bool task_under_cgroup_hierarchy(struct task_struct *task,
 					       struct cgroup *ancestor)
 {

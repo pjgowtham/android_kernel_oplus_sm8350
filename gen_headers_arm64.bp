@@ -469,8 +469,6 @@ gen_headers_out_arm64 = [
     "linux/qemu_fw_cfg.h",
     "linux/qg.h",
     "linux/qg-profile.h",
-    "linux/qbg.h",
-    "linux/qbg-profile.h",
     "linux/qnx4_fs.h",
     "linux/qnxtypes.h",
     "linux/qrng.h",
@@ -521,7 +519,6 @@ gen_headers_out_arm64 = [
     "linux/shm.h",
     "linux/signal.h",
     "linux/signalfd.h",
-    "linux/slatecom_interface.h",
     "linux/smc.h",
     "linux/smc_diag.h",
     "linux/smcinvoke.h",
@@ -690,6 +687,9 @@ gen_headers_out_arm64 = [
     "scsi/scsi_bsg_ufs.h",
     "scsi/scsi_netlink.h",
     "scsi/scsi_netlink_fc.h",
+//#ifdef OPLUS_FEATURE_UFSPLUS
+    "scsi/ufs/ioctl.h",
+//#endif /* OPLUS_FEATURE_UFSPLUS */
     "sound/asequencer.h",
     "sound/asoc.h",
     "sound/asound.h",
@@ -1002,6 +1002,7 @@ gen_headers_out_arm64 = [
     "camera/media/cam_isp_ife.h",
     "camera/media/cam_isp_tfe.h",
     "camera/media/cam_isp_vfe.h",
+    "camera/media/cam_isp_sfe.h",
     "camera/media/cam_jpeg.h",
     "camera/media/cam_lrme.h",
     "camera/media/cam_ope.h",
@@ -1009,6 +1010,10 @@ gen_headers_out_arm64 = [
     "camera/media/cam_sensor.h",
     "camera/media/cam_sync.h",
     "camera/media/cam_tfe.h",
+//ifdef VENDOR_EDIT
+    "camera/oplus/media/oplus_cam_sensor.h",
+    "camera/oplus/media/oplus_cam_defs.h",
+//endif
     "display/drm/msm_drm_pp.h",
     "display/drm/sde_drm.h",
     "display/media/mmm_color_fmt.h",
@@ -1016,6 +1021,9 @@ gen_headers_out_arm64 = [
     "display/hdcp/msm_hdmi_hdcp_mgr.h",
     "vidc/media/msm_media_info.h",
     "vidc/media/msm_vidc_utils.h",
+//ifdef OPLUS_FEATURE_PXLW_IRIS5
+    "display/drm/msm_drm_iris.h",
+//endif
 ]
 
 genrule {
