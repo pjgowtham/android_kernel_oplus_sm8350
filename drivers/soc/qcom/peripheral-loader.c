@@ -416,6 +416,15 @@ int pil_do_ramdump(struct pil_desc *desc,
 	int count = 0, map_cnt = 0, ret;
 
 	if (desc->minidump_ss) {
+#if defined(OPLUS_FEATURE_MODEM_MINIDUMP) && defined(CONFIG_OPLUS_FEATURE_MODEM_MINIDUMP)
+	//Add for customized subsystem ramdump to skip generate dump cause by SAU
+	if (SKIP_GENERATE_RAMDUMP) {
+		pil_err(desc, "%s: Skip ramdump cuase by ap normal trigger.\n %s",
+			__func__, desc->name);
+		SKIP_GENERATE_RAMDUMP = false;
+		return -1;
+	}
+#endif
 		pr_debug("Minidump : md_ss_toc->md_ss_toc_init is 0x%x\n",
 			(unsigned int)desc->minidump_ss->md_ss_toc_init);
 		pr_debug("Minidump : md_ss_toc->md_ss_enable_status is 0x%x\n",
@@ -435,12 +444,19 @@ int pil_do_ramdump(struct pil_desc *desc,
 			(desc->minidump_ss->md_ss_toc_init == true) &&
 			(desc->minidump_ss->md_ss_enable_status ==
 				MD_SS_ENABLED)) {
+			#if !defined(OPLUS_FEATURE_MODEM_MINIDUMP) || !defined(CONFIG_OPLUS_FEATURE_MODEM_MINIDUMP)
+			//Add for skip mini dump encryption
 			if (desc->minidump_ss->encryption_status ==
 			    MD_SS_ENCR_DONE) {
 				pr_debug("Dumping Minidump for %s\n",
 					desc->name);
 				return pil_do_minidump(desc, minidump_dev);
 			}
+			#else
+				pr_debug("Minidump : Dumping for %s\n",
+					desc->name);
+				return pil_do_minidump(desc, minidump_dev);
+			#endif
 			pr_debug("Minidump aborted for %s\n", desc->name);
 			return -EINVAL;
 		}
@@ -1197,7 +1213,6 @@ int pil_boot(struct pil_desc *desc)
 	if (desc->shutdown_fail)
 		pil_err(desc, "Subsystem shutdown failed previously!\n");
 
-	desc->clear_fw_region = true;
 	/* Reinitialize for new image */
 	pil_release_mmap(desc);
 
@@ -1251,8 +1266,6 @@ int pil_boot(struct pil_desc *desc)
 	if (desc->ops->init_image)
 		ret = desc->ops->init_image(desc, fw->data, fw->size);
 	if (ret) {
-		/* S2 mapping not yet done */
-		desc->clear_fw_region = false;
 		pil_err(desc, "Initializing image failed(rc:%d)\n", ret);
 		goto err_boot;
 	}
@@ -1262,8 +1275,6 @@ int pil_boot(struct pil_desc *desc)
 		ret = desc->ops->mem_setup(desc, priv->region_start,
 				priv->region_end - priv->region_start);
 	if (ret) {
-		/* S2 mapping is failed */
-		desc->clear_fw_region = false;
 		pil_err(desc, "Memory setup error(rc:%d)\n", ret);
 		goto err_deinit_image;
 	}

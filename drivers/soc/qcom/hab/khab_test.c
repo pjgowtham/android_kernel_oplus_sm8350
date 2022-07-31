@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 #include "hab.h"
 #include <linux/rtc.h>
@@ -274,7 +274,7 @@ static ssize_t vchan_store(struct kobject *kobj, struct kobj_attribute *attr,
 		pr_err("failed to read anything from input %d\n", ret);
 		return 0;
 	} else
-		return count;
+		return vchan_stat;
 }
 
 static ssize_t ctx_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -293,7 +293,7 @@ static ssize_t ctx_store(struct kobject *kobj, struct kobj_attribute *attr,
 		pr_err("failed to read anything from input %d\n", ret);
 		return 0;
 	} else
-		return count;
+		return context_stat;
 }
 
 static ssize_t expimp_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -305,11 +305,10 @@ static ssize_t expimp_show(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t expimp_store(struct kobject *kobj, struct kobj_attribute *attr,
 						const char *buf, size_t count)
 {
-	int ret = -1;
+	int ret;
 	char str[36] = {0};
-	unsigned long temp;
 
-	ret = sscanf(buf, "%s", str);
+	ret = sscanf(buf, "%35s", str);
 	if (ret < 1)
 		pr_err("failed to read anything from input %d\n", ret);
 
@@ -320,16 +319,11 @@ static ssize_t expimp_store(struct kobject *kobj, struct kobj_attribute *attr,
 		return strlen("dump_pipe");
 	}
 
-	if (buf) {
-		ret = kstrtol(buf, 10, &temp);
-		pid_stat = temp;
-
-		if (ret < 0)
-			pr_err("failed to read anything from input %d\n", ret);
-		else
-			return count; /* good result stored */
-	}
-
+	ret = sscanf(buf, "%du", &pid_stat);
+	if (ret < 1)
+		pr_err("failed to read anything from input %d\n", ret);
+	else
+		return pid_stat; /* good result stored */
 	return -EEXIST;
 }
 

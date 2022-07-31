@@ -478,7 +478,7 @@ config QCOM_RPMHPD
 	  for the voltage rail.
 
 config QCOM_RUN_QUEUE_STATS
-       bool "Enable collection and exporting of QTI Run Queue stats to userspace"
+       tristate "Enable collection and exporting of QTI Run Queue stats to userspace"
        help
         This option enables the driver to periodically collecting the statistics
         of kernel run queue information and calculate the load of the system.
@@ -715,7 +715,7 @@ config MSM_PERFORMANCE_QGKI
 
 config QMP_DEBUGFS_CLIENT
 	bool "Debugfs Client to communicate with AOP using QMP protocol"
-	depends on DEBUG_FS
+#	depends on DEBUG_FS
 	help
 	  This options enables a driver which allows clients to send messages
 	  to Alway On processor using QMP transport. Users can echo a message
@@ -1131,8 +1131,13 @@ config QCOM_WDOG_BITE_EARLY_PANIC
 config QCOM_WATCHDOG_BARK_TIME
 	depends on QCOM_WDT_CORE
 	int "Qualcomm Technologies, Inc. Watchdog bark time in ms"
-	default 11000
-	range 11000 11000
+	#ifndef OPLUS_STABILITY_BUG
+	#default 11000
+	#range 11000 11000
+	#else
+	default 20000
+	range 11000 20000
+	#endif
 	help
 	  The amount of time, in milliseconds, that should elapse after
 	  a watchdog timer reset before a bark interrupt is sent from the
@@ -1278,6 +1283,10 @@ config QCOM_RTIC
 	  will trigger RTIC kernel MP.s (measurement parameters) generation
 	  during the kernel build.
 
+config OPLUS_FEATURE_MODEM_MINIDUMP
+        bool "Add for oplus modem minidump function"
+        help
+          Add for oplus modem minidump function.
 config RENAME_BLOCK_DEVICE
 	tristate "Rename block device node in /dev"
 	default n
@@ -1345,16 +1354,6 @@ config MSM_SEB_RPMSG
 	  opened by remote processor. It doesn't maintain state machine
 	  and is probed when Slate opens channel and removed when the
 	  channel is closed by remote processor.
-
-config SDX_EXT_IPC
-	tristate "QCOM external ipc driver"
-	help
-      This enables the module to help modem communicate with external
-      Application processor connected to Qualcomm Technologies, Inc
-      modem chipset. The modem and APQ can understand each other's
-      state by reading ipc gpios.
-
-      If unsure, say N.
 
 source "drivers/soc/qcom/icnss2/Kconfig"
 

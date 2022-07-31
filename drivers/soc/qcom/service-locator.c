@@ -15,7 +15,7 @@
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/workqueue.h>
-
+#include <linux/reboot.h>
 #include <linux/soc/qcom/qmi.h>
 #include <soc/qcom/service-locator.h>
 #include "service-locator-private.h"
@@ -140,6 +140,10 @@ static int servreg_loc_send_msg(
 	if (rc < 0) {
 		pr_err("QMI qmi txn wait failed for client %s, ret - %d\n",
 			pd->client_name, rc);
+		if ((strstr(pd->client_name, "audio_pdr_adsp")!= NULL) && (-110 == rc)) {
+			pr_err("qmi timeout for audio_pdr_adsp!\n");
+			kernel_restart(0);
+		}
 		return rc;
 	}
 
