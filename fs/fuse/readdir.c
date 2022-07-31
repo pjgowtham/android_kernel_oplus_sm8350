@@ -207,7 +207,7 @@ retry:
 			dput(dentry);
 			goto retry;
 		}
-		if (fuse_is_bad(inode)) {
+		if (is_bad_inode(inode)) {
 			dput(dentry);
 			return -EIO;
 		}
@@ -568,7 +568,7 @@ int fuse_readdir(struct file *file, struct dir_context *ctx)
 	struct inode *inode = file_inode(file);
 	int err;
 
-	if (fuse_is_bad(inode))
+	if (is_bad_inode(inode))
 		return -EIO;
 
 	mutex_lock(&ff->readdir.lock);

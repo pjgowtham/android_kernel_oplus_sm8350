@@ -124,8 +124,8 @@ static int erofs_read_superblock(struct super_block *sb)
 	blkszbits = dsb->blkszbits;
 	/* 9(512 bytes) + LOG_SECTORS_PER_BLOCK == LOG_BLOCK_SIZE */
 	if (blkszbits != LOG_BLOCK_SIZE) {
-		erofs_err(sb, "blkszbits %u isn't supported on this platform",
-			  blkszbits);
+		erofs_err(sb, "blksize %u isn't supported on this platform",
+			  1 << blkszbits);
 		goto out;
 	}
 
@@ -207,6 +207,9 @@ static void erofs_default_options(struct erofs_sb_info *sbi)
 #endif
 #ifdef CONFIG_EROFS_FS_POSIX_ACL
 	set_opt(sbi, POSIX_ACL);
+#endif
+#ifdef CONFIG_OPLUS_FEATURE_EROFS
+	set_opt(sbi, LZ4ASM);
 #endif
 }
 

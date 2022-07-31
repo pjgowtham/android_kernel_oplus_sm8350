@@ -103,7 +103,6 @@ restart:
 		if (dentry == vfsmnt->mnt_root || IS_ROOT(dentry)) {
 			struct mount *parent = READ_ONCE(mnt->mnt_parent);
 			struct mnt_namespace *mnt_ns;
-
 			/* Escaped? */
 			if (dentry != vfsmnt->mnt_root) {
 				bptr = *buffer;
