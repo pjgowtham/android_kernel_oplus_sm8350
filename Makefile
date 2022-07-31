@@ -1053,7 +1053,7 @@ NOSTDINC_FLAGS += -nostdinc -isystem $(shell $(CC) -print-file-name=include)
 KBUILD_CFLAGS += -Wdeclaration-after-statement
 
 # Variable Length Arrays (VLAs) should not be used anywhere in the kernel
-KBUILD_CFLAGS += -Wvla
+#KBUILD_CFLAGS += -Wvla
 
 # disable pointer signed / unsigned warnings in gcc 4.0
 KBUILD_CFLAGS += -Wno-pointer-sign
