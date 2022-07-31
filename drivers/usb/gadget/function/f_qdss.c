@@ -591,8 +591,8 @@ static void usb_qdss_connect_work(struct work_struct *work)
 
 	qdss = container_of(work, struct f_qdss, connect_w);
 
-	/* If cable is removed, discard connect_work */
-	if (qdss->usb_connected == 0) {
+	/* If qdss is closed or cable is removed, discard connect_work */
+	if (qdss->qdss_close || qdss->usb_connected == 0) {
 		cancel_work_sync(&qdss->disconnect_w);
 		return;
 	}
@@ -927,8 +927,6 @@ void usb_qdss_close(struct usb_qdss_ch *ch)
 
 	if (qdss->endless_req) {
 		spin_unlock_irqrestore(&channel_lock, flags);
-		/* Flush connect work before proceeding with de-queue */
-		flush_work(&qdss->connect_w);
 		usb_ep_dequeue(qdss->port.data, qdss->endless_req);
 		spin_lock_irqsave(&channel_lock, flags);
 	}

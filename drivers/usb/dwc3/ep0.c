@@ -21,6 +21,11 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/composite.h>
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#if IS_ENABLED(CONFIG_OPLUS_CHG)
+#include <linux/usb/dwc3-msm.h>
+#endif
+#endif
 
 #include "core.h"
 #include "debug.h"
@@ -78,20 +83,8 @@ static int dwc3_ep0_start_trans(struct dwc3_ep *dep)
 	params.param1 = lower_32_bits(dwc->ep0_trb_addr);
 
 	ret = dwc3_send_gadget_ep_cmd(dep, DWC3_DEPCMD_STARTTRANSFER, &params);
-	if (ret < 0) {
-		if (ret == -ETIMEDOUT) {
-			/*
-			 * If start transfer is timing out then mark it as an error
-			 * event since the controller is already in an unknown
-			 * state.
-			 */
-			dbg_log_string("%s: error event seen\n", __func__);
-			dwc->err_evt_seen = true;
-			dwc3_notify_event(dwc, DWC3_CONTROLLER_ERROR_EVENT, 0);
-			dwc3_notify_event(dwc, DWC3_CONTROLLER_NOTIFY_CLEAR_DB, 0);
-		}
+	if (ret < 0)
 		return ret;
-	}
 
 	dwc->ep0_next_event = DWC3_EP0_COMPLETE;
 
@@ -621,6 +614,12 @@ static int dwc3_ep0_set_address(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 	else
 		usb_gadget_set_state(&dwc->gadget, USB_STATE_DEFAULT);
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#if IS_ENABLED(CONFIG_OPLUS_CHG)
+	oplus_dwc3_notify_event(DWC3_ENUM_DONE);
+#endif
+#endif
+
 	return 0;
 }
 
@@ -855,6 +854,30 @@ static int dwc3_ep0_std_request(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 
 	return ret;
 }
+
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#if IS_ENABLED(CONFIG_OPLUS_CHG)
+static void (*oplus_notify_event)(enum oplus_dwc3_notify_event);
+void oplus_dwc3_set_notifier(void (*notify)(enum oplus_dwc3_notify_event))
+{
+	oplus_notify_event = notify;
+}
+EXPORT_SYMBOL(oplus_dwc3_set_notifier);
+
+int oplus_dwc3_notify_event(enum oplus_dwc3_notify_event event)
+{
+	int ret = 0;
+
+	if (oplus_notify_event)
+		oplus_notify_event(event);
+	else
+		ret = -ENODEV;
+
+	return ret;
+}
+EXPORT_SYMBOL(oplus_dwc3_notify_event);
+#endif
+#endif
 
 static void dwc3_ep0_inspect_setup(struct dwc3 *dwc,
 		const struct dwc3_event_depevt *event)
