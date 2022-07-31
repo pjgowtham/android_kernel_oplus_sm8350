@@ -711,11 +711,13 @@ static void compr_event_handler(uint32_t opcode,
 			pr_debug("%s: issue CMD_RUN", __func__);
 			q6asm_run_nowait(prtd->audio_client, 0, 0, 0);
 			snd_compr_drain_notify(cstream);
+			#ifdef OPLUS_BUG_STABILITY
 			/*
 			 * Next track requires state of running. Otherwise,
 			 * it fails.
 			*/
 			cstream->runtime->state = SNDRV_PCM_STATE_RUNNING;
+			#endif /* OPLUS_BUG_STABILITY */
 			spin_unlock_irqrestore(&prtd->lock, flags);
 			break;
 		}
@@ -2560,7 +2562,13 @@ static int msm_compr_trigger(struct snd_compr_stream *cstream, int cmd)
 	struct audio_client *ac = prtd->audio_client;
 	unsigned long fe_id = rtd->dai_link->id;
 	int rc = 0;
+#ifndef OPLUS_BUG_STABILITY
+#if IS_ENABLED(CONFIG_AUDIO_QGKI)
 	int bytes_to_write;
+#endif
+#else /* OPLUS_BUG_STABILITY */
+	int bytes_to_write;
+#endif /* OPLUS_BUG_STABILITY */
 	unsigned long flags;
 	int stream_id;
 	uint32_t stream_index;
@@ -2949,6 +2957,7 @@ static int msm_compr_trigger(struct snd_compr_stream *cstream, int cmd)
 			q6asm_run_nowait(prtd->audio_client, 0, 0, 0);
 		}
 #else
+		#ifdef OPLUS_BUG_STABILITY
 		if ((prtd->bytes_received > prtd->copied_total) &&
 			(prtd->bytes_received < runtime->fragment_size)) {
 			pr_debug("%s: send the only partial buffer to dsp\n",
@@ -2963,6 +2972,7 @@ static int msm_compr_trigger(struct snd_compr_stream *cstream, int cmd)
 				msm_compr_send_buffer(prtd);
 			}
 		}
+		#endif /* OPLUS_BUG_STABILITY */
 
 		atomic_set(&prtd->drain, 1);
 		spin_unlock_irqrestore(&prtd->lock, flags);

@@ -85,13 +85,18 @@ struct swr_haptics_dev {
 	struct snd_soc_component	*component;
 	struct regmap			*regmap;
 	struct swr_port			port;
+
+	struct regulator		*vdd;
+	u32 enable_cnt;
+	#ifdef OPLUS_ARCH_EXTENDS
+	u8				vmax;
+	#endif /* OPLUS_ARCH_EXTENDS */
 	struct regulator		*slave_vdd;
 	struct regulator		*hpwr_vreg;
 	u32				hpwr_voltage_mv;
 	bool				slave_enabled;
 	bool				hpwr_vreg_enabled;
 	bool				ssr_recovery;
-	u8				vmax;
 	u8				flags;
 };
 
@@ -268,6 +273,8 @@ static int hap_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+
+		#ifdef OPLUS_ARCH_EXTENDS
 		/* If SSR ever happened, toggle swr-slave-vdd for HW recovery */
 		if ((swr_hap->flags & HAP_SSR_RECOVERY)
 				&& swr_hap->ssr_recovery) {
@@ -282,6 +289,7 @@ static int hap_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 				__func__, rc);
 			return rc;
 		}
+		#endif /* OPLUS_ARCH_EXTENDS */
 		regmap_read(swr_hap->regmap, SWR_VMAX_REG, &val);
 		regmap_read(swr_hap->regmap, SWR_READ_DATA_REG, &val);
 		dev_dbg(swr_hap->dev, "%s: swr_vmax is set to 0x%x\n", __func__, val);
@@ -342,6 +350,7 @@ static int hap_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+#ifdef OPLUS_ARCH_EXTENDS
 static int haptics_vmax_get(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
 {
@@ -365,6 +374,9 @@ static int haptics_vmax_put(struct snd_kcontrol *kcontrol,
 			snd_soc_component_get_drvdata(component);
 
 	swr_hap->vmax = ucontrol->value.integer.value[0];
+	if (swr_hap->vmax > 200) {
+		swr_hap->vmax = 200;
+	}
 	pr_debug("%s: vmax %u\n", __func__, swr_hap->vmax);
 
 	return 0;
@@ -374,6 +386,7 @@ static const struct snd_kcontrol_new haptics_snd_controls[] = {
 	SOC_SINGLE_EXT("Haptics Amplitude Step", SND_SOC_NOPM, 0, 100, 0,
 		haptics_vmax_get, haptics_vmax_put),
 };
+#endif /* OPLUS_ARCH_EXTENDS */
 
 static const struct snd_soc_dapm_widget haptics_comp_dapm_widgets[] = {
 	SND_SOC_DAPM_INPUT("HAP_IN"),
@@ -421,8 +434,10 @@ static const struct snd_soc_component_driver swr_haptics_component = {
 	.name = "swr-haptics",
 	.probe = haptics_comp_probe,
 	.remove = haptics_comp_remove,
+	#ifdef OPLUS_ARCH_EXTENDS
 	.controls = haptics_snd_controls,
 	.num_controls = ARRAY_SIZE(haptics_snd_controls),
+	#endif /* OPLUS_ARCH_EXTENDS */
 	.dapm_widgets = haptics_comp_dapm_widgets,
 	.num_dapm_widgets = ARRAY_SIZE(haptics_comp_dapm_widgets),
 	.dapm_routes = haptics_comp_dapm_route,
@@ -491,8 +506,10 @@ static int swr_haptics_probe(struct swr_device *sdev)
 	if (!swr_hap)
 		return -ENOMEM;
 
+	#ifdef OPLUS_ARCH_EXTENDS
 	/* VMAX default to 5V */
 	swr_hap->vmax = 100;
+	#endif /* OPLUS_ARCH_EXTENDS */
 	swr_hap->swr_slave = sdev;
 	swr_hap->dev = &sdev->dev;
 	pmic_type = (uintptr_t)of_device_get_match_data(swr_hap->dev);

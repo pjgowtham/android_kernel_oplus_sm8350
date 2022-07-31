@@ -20,6 +20,10 @@
 #include <ipc/apr.h>
 #include "adsp_err.h"
 #include <soc/qcom/secure_buffer.h>
+#ifdef OPLUS_FEATURE_AUDIODETECT
+#include <linux/proc_fs.h>
+#include "../asoc/msm-qti-pp-config.h"
+#endif /* OPLUS_FEATURE_AUDIODETECT */
 
 #define TIMEOUT_MS 1000
 
@@ -43,7 +47,6 @@
 #endif
 
 #define SESSION_TYPE_RX 0
-#define COPP_VOL_DEFAULT 0x2000
 
 /* ENUM for adm_status */
 enum adm_cal_status {
@@ -112,10 +115,13 @@ struct adm_ctl {
 	int tx_port_id;
 	bool hyp_assigned;
 	int fnn_app_type;
-	bool is_channel_swapped;
 };
 
 static struct adm_ctl			this_adm;
+
+#ifdef OPLUS_FEATURE_AUDIODETECT
+struct proc_dir_entry *mutedet_dbg_dir;
+#endif /* OPLUS_FEATURE_AUDIODETECT */
 
 struct adm_multi_ch_map {
 	bool set_channel_map;
@@ -144,6 +150,27 @@ static struct adm_multi_ch_map port_channel_map[AFE_MAX_PORTS];
 static int adm_get_parameters[MAX_COPPS_PER_PORT * ADM_GET_PARAMETER_LENGTH];
 static int adm_module_topo_list[MAX_COPPS_PER_PORT *
 				ADM_GET_TOPO_MODULE_INSTANCE_LIST_LENGTH];
+
+#ifdef OPLUS_FEATURE_AUDIODETECT
+int general_playback_muted_cnt = 0;
+int general_record_muted_cnt = 0;
+int general_playback_zd_cnt = 0;
+int general_record_zd_cnt = 0;
+int general_playback_pop_cnt = 0;
+int general_record_pop_cnt = 0;
+int general_playback_clip_cnt = 0;
+int general_record_clip_cnt = 0;
+
+int voip_rx_muted_cnt = 0;
+int voip_tx_muted_cnt = 0;
+int voip_rx_zd_cnt = 0;
+int voip_tx_zd_cnt = 0;
+int voip_rx_pop_cnt = 0;
+int voip_tx_pop_cnt = 0;
+int voip_rx_clip_cnt = 0;
+int voip_tx_clip_cnt = 0;
+#endif /* OPLUS_FEATURE_AUDIODETECT */
+
 static struct mutex dts_srs_lock;
 
 void msm_dts_srs_acquire_lock(void)
@@ -220,6 +247,138 @@ int adm_get_default_copp_idx(int port_id)
 }
 EXPORT_SYMBOL(adm_get_default_copp_idx);
 
+#ifdef OPLUS_FEATURE_AUDIODETECT
+#define SESSION_TYPE_RX 0
+#define SESSION_TYPE_TX 1
+int adm_set_auddet_enable_param(int port_id, uint8_t val)
+{
+	uint8_t enable;
+	struct param_hdr_v3 param_hdr;
+	int rc  = -EINVAL;
+	int idx;
+	int port_idx = adm_validate_and_get_port_index(port_id);
+
+	pr_info("%s, portid %d, enable %d\n", __func__, port_id, val);
+
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = MUTE_DETECT_MODULE_ID;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = MUTE_DETECT_ENABLE_PARAM_ID;
+	param_hdr.param_size = sizeof(enable);
+
+	enable = val;
+
+	for (idx = 0; idx < MAX_COPPS_PER_PORT; idx++) {
+		if (atomic_read(&this_adm.copp.id[port_idx][idx]) != RESET_COPP_ID) {
+			pr_info("%s : active copp_idx:0x%x for port_id \n",__func__, idx);
+
+			if (atomic_read(&this_adm.copp.session_type[port_idx][idx]) == SESSION_TYPE_TX) {
+				param_hdr.instance_id = 0x8000;
+			}
+
+			if ((atomic_read(&this_adm.copp.app_type[port_idx][idx])) != 0x1113a) {
+				continue;
+			}
+
+			rc = adm_pack_and_set_one_pp_param(port_id, idx, param_hdr,
+				   (uint8_t *) &enable);
+			if (rc) {
+				pr_err("%s: Failed to set auddet enable, err %d\n", __func__, rc);
+			} else {
+				pr_err("%s: set auddet enable ok\n", __func__);
+				break;
+			}
+		}
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(adm_set_auddet_enable_param);
+
+int adm_get_all_mute_pp_param_from_port(int port_id)
+{
+	int port_idx = adm_validate_and_get_port_index(port_id), idx;
+	int ret = 0;
+	char *param_value;
+	uint32_t param_size = (4) * sizeof(uint32_t) + sizeof(struct param_hdr_v3);
+	struct param_hdr_v3 param_hdr;
+
+	if (port_idx < 0) {
+		pr_err("%s: Invalid port id: 0x%x", __func__, port_id);
+		return -EINVAL;
+	}
+	pr_info("%s: port_idx:%d\n", __func__, port_idx);
+
+	param_value = kzalloc(param_size, GFP_KERNEL);
+	if (!param_value)
+		return -ENOMEM;
+
+	param_hdr.module_id = MUTE_DETECT_MODULE_ID;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = MUTE_DETECT_RESULT_PARAM_ID;
+	param_hdr.param_size = param_size;
+
+	for (idx = 0; idx < MAX_COPPS_PER_PORT; idx++) {
+		if (atomic_read(&this_adm.copp.id[port_idx][idx]) != RESET_COPP_ID) {
+			pr_info("%s : active copp_idx:0x%x for port_id \n",__func__, idx);
+
+			if (atomic_read(&this_adm.copp.session_type[port_idx][idx]) == SESSION_TYPE_TX) {
+				param_hdr.instance_id = 0x8000;
+			}
+
+			if ((atomic_read(&this_adm.copp.app_type[port_idx][idx])) != 0x1113a) {
+				continue;
+			}
+
+			ret = adm_get_pp_params(port_id, idx,
+						ADM_CLIENT_ID_DEFAULT, NULL, &param_hdr,
+						param_value);
+			pr_info("%s : mute_detect return param, ret: %d, mutedet = %d, zd = %d, pop = %d, clip = %d\n",__func__, ret, *(uint32_t *)param_value, *((uint32_t *)param_value + 1), *((uint32_t *)param_value + 2), *((uint32_t *)param_value + 3));
+			pr_info("%s : COPP: 0x%x\n",__func__, this_adm.copp.app_type[port_idx][idx]);
+			switch (atomic_read(&this_adm.copp.app_type[port_idx][idx])) {
+				case 0x11130:
+					pr_info("%s : update playback detection result\n",__func__);
+					general_playback_muted_cnt = *(uint32_t *)param_value;
+					general_playback_zd_cnt = *((uint32_t *)param_value + 1);
+					general_playback_pop_cnt = *((uint32_t *)param_value + 2);
+					general_playback_clip_cnt = *((uint32_t *)param_value + 3);
+					break;
+				case 0x11132:
+					pr_info("%s : update recording detection result\n",__func__);
+					general_record_muted_cnt = *(uint32_t *)param_value;
+					general_record_zd_cnt = *((uint32_t *)param_value + 1);
+					general_record_pop_cnt = *((uint32_t *)param_value + 2);
+					general_record_clip_cnt = *((uint32_t *)param_value + 3);
+					break;
+				case 0x1113a:
+					pr_info("%s : update VOIP detection result\n",__func__);
+					if (atomic_read(&this_adm.copp.session_type[port_idx][idx]) == SESSION_TYPE_RX) {
+						pr_info("%s : VOIP RX result\n",__func__);
+						voip_rx_muted_cnt = *(uint32_t *)param_value;
+						voip_rx_zd_cnt = *((uint32_t *)param_value + 1);
+						voip_rx_pop_cnt = *((uint32_t *)param_value + 2);
+						voip_rx_clip_cnt = *((uint32_t *)param_value + 3);
+					} else if (atomic_read(&this_adm.copp.session_type[port_idx][idx]) == SESSION_TYPE_TX) {
+						pr_info("%s : VOIP TX result\n",__func__);
+						voip_tx_muted_cnt = *(uint32_t *)param_value;
+						voip_tx_zd_cnt = *((uint32_t *)param_value + 1);
+						voip_tx_pop_cnt = *((uint32_t *)param_value + 2);
+						voip_tx_clip_cnt = *((uint32_t *)param_value + 3);
+					}
+					break;
+				default:
+					break;
+			}
+			memset(param_value, 0, param_size);
+		}
+	}
+
+	kfree(param_value);
+	return 0;
+}
+EXPORT_SYMBOL(adm_get_all_mute_pp_param_from_port);
+#endif /* OPLUS_FEATURE_AUDIODETECT */
+
 int adm_get_topology_for_port_from_copp_id(int port_id, int copp_id)
 {
 	int port_idx = adm_validate_and_get_port_index(port_id), idx;
@@ -290,7 +449,7 @@ static int adm_get_copp_id(int port_idx, int copp_idx)
 }
 
 static int adm_get_idx_if_single_copp_exists(int port_idx,
-			int topology,
+			int topology, int mode,
 			int rate, int bit_width,
 			uint32_t copp_token)
 {
@@ -301,6 +460,8 @@ static int adm_get_idx_if_single_copp_exists(int port_idx,
 	for (idx = 0; idx < MAX_COPPS_PER_PORT; idx++)
 		if ((topology ==
 			atomic_read(&this_adm.copp.topology[port_idx][idx])) &&
+			(mode ==
+			 atomic_read(&this_adm.copp.mode[port_idx][idx])) &&
 			(rate ==
 			 atomic_read(&this_adm.copp.rate[port_idx][idx])) &&
 			(bit_width ==
@@ -322,7 +483,7 @@ static int adm_get_idx_if_copp_exists(int port_idx, int topology, int mode,
 
 	if (copp_token)
 		return adm_get_idx_if_single_copp_exists(port_idx,
-				topology,
+				topology, mode,
 				rate, bit_width,
 				copp_token);
 
@@ -3180,6 +3341,11 @@ static int adm_copp_set_ec_ref_mfc_cfg(int port_id, int copp_idx,
  *
  * Returns 0 on success or error on failure
  */
+
+#ifdef OPLUS_FEATURE_KTV
+#define AUDIO_TOPOLOGY_KTV    0x10001080
+#endif /* OPLUS_FEATURE_KTV */
+
 int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	     int perf_mode, uint16_t bit_width, int app_type, int acdb_id,
 	     int session_type, uint32_t passthr_mode, uint32_t copp_token)
@@ -3216,11 +3382,11 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 	     struct msm_ec_ref_port_cfg *ec_ref_port_cfg,
 	    struct msm_pcm_channel_mixer *ec_ref_chmix_cfg)
 {
-	struct adm_cmd_device_open_v5	open = {0};
-	struct adm_cmd_device_open_v6	open_v6 = {0};
-	struct adm_cmd_device_open_v8	open_v8 = {0};
-	struct adm_device_endpoint_payload ep1_payload = {0};
-	struct adm_device_endpoint_payload ep2_payload = {0};
+	struct adm_cmd_device_open_v5	open;
+	struct adm_cmd_device_open_v6	open_v6;
+	struct adm_cmd_device_open_v8	open_v8;
+	struct adm_device_endpoint_payload ep1_payload;
+	struct adm_device_endpoint_payload ep2_payload;
 	int ep1_payload_size = 0;
 	int ep2_payload_size = 0;
 	int ret = 0;
@@ -3235,8 +3401,8 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 					ec_ref_port_cfg->port_id :
 					this_adm.ec_ref_rx;
 
-	int ec_ref_ch = ec_ref_chmix_cfg ?
-					ec_ref_chmix_cfg->input_channel :
+	int ec_ref_ch = ec_ref_port_cfg ?
+					ec_ref_port_cfg->ch :
 					this_adm.num_ec_ref_rx_chans;
 
 	int ec_ref_bit = ec_ref_port_cfg ?
@@ -3320,6 +3486,15 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 		pr_debug("%s: ffecns port id =%x\n", __func__,
 				this_adm.ffecns_port_id);
 	}
+
+	#ifdef OPLUS_FEATURE_KTV
+	if ((topology == AUDIO_TOPOLOGY_KTV)
+			&& (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_48K)) {
+			pr_info("%s: Change rate %d to 48K for copp 0x%x",
+					__func__, rate, topology);
+			rate = 48000;
+	}
+	#endif /* OPLUS_FEATURE_KTV */
 
 	if (topology == VPM_TX_VOICE_SMECNS_V2_COPP_TOPOLOGY ||
 	    topology == VPM_TX_VOICE_FLUENCE_SM_COPP_TOPOLOGY ||
@@ -3440,10 +3615,11 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 				if (ec_ref_ch != 0) {
 					open_v8.endpoint_id_2 =
 						ec_ref_port_id;
-					this_adm.ec_ref_rx = AFE_PORT_INVALID;
+					ec_ref_port_id = AFE_PORT_INVALID;
 				} else {
-					pr_warn("%s: EC channels not set %d\n",
+					pr_err("%s: EC channels not set %d\n",
 						__func__, ec_ref_ch);
+					return -EINVAL;
 				}
 			}
 
@@ -4312,6 +4488,7 @@ EXPORT_SYMBOL(adm_close);
 int send_rtac_audvol_cal(void)
 {
 	int ret = 0;
+	int ret2 = 0;
 	int i = 0;
 	int copp_idx, port_idx, acdb_id, app_id, path;
 	struct cal_block_data *cal_block = NULL;
@@ -4357,7 +4534,7 @@ int send_rtac_audvol_cal(void)
 				continue;
 			}
 
-			ret = adm_remap_and_send_cal_block(ADM_RTAC_AUDVOL_CAL,
+			ret2 = adm_remap_and_send_cal_block(ADM_RTAC_AUDVOL_CAL,
 				rtac_adm_data.device[i].afe_port,
 				copp_idx, cal_block,
 				atomic_read(&this_adm.copp.
@@ -4366,12 +4543,13 @@ int send_rtac_audvol_cal(void)
 				audvol_cal_info->acdb_id,
 				atomic_read(&this_adm.copp.
 				rate[port_idx][copp_idx]));
-			if (ret < 0) {
+			if (ret2 < 0) {
 				pr_debug("%s: remap and send failed for copp Id %d, acdb id %d, app type %d, path %d\n",
 					__func__, rtac_adm_data.device[i].copp,
 					audvol_cal_info->acdb_id,
 					audvol_cal_info->app_type,
 					audvol_cal_info->path);
+				ret = ret2;
 			}
 		}
 	}
@@ -4789,6 +4967,53 @@ int adm_set_volume(int port_id, int copp_idx, int volume)
 	return rc;
 }
 EXPORT_SYMBOL(adm_set_volume);
+
+#ifdef OPLUS_FEATURE_KTV
+int adm_set_reverb_param(int port_id, int copp_idx, int32_t* params)
+{
+	struct audproc_revert_param audproc_param;
+	struct param_hdr_v3 param_hdr;
+	int rc  = 0;
+
+	pr_debug("%s, portid %d, copp idx %d\n", __func__, port_id, copp_idx);
+
+	memset(&audproc_param, 0, sizeof(audproc_param));
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = 0x10001081;
+	param_hdr.instance_id = 0x8000;
+	param_hdr.param_id = 0x10001082;
+	param_hdr.param_size = sizeof(audproc_param);
+
+	audproc_param.mode = params[0];
+	audproc_param.volume = params[1];
+	audproc_param.peg = params[2];
+	audproc_param.pitchange = params[3];
+	audproc_param.reverbparam= params[4];
+	audproc_param.enabled= params[5];
+	audproc_param.reverved0 = params[6];
+	audproc_param.reverved1 = params[7];
+	audproc_param.reverved2 = params[8];
+	audproc_param.reverved3 = params[9];
+	audproc_param.reverved4 = params[10];
+	audproc_param.reverved5 = params[11];
+	audproc_param.reverved6 = params[12];
+	audproc_param.reverved7 = params[13];
+	audproc_param.reverved8 = params[14];
+	audproc_param.reverved9 = params[15];
+	audproc_param.reverved10 = params[16];
+	audproc_param.reverved11 = params[17];
+	audproc_param.reverved12 = params[18];
+	audproc_param.reverved13 = params[19];
+
+	rc = adm_pack_and_set_one_pp_param(port_id, copp_idx, param_hdr,
+					   (uint8_t *) &audproc_param);
+	if (rc)
+		pr_err("%s: Failed to set volume, err %d\n", __func__, rc);
+
+	return rc;
+}
+EXPORT_SYMBOL(adm_set_reverb_param);
+#endif /* OPLUS_FEATURE_KTV */
 
 /**
  * adm_set_softvolume -
@@ -5213,7 +5438,6 @@ int adm_wait_timeout(int port_id, int copp_idx, int wait_time)
 	pr_debug("%s: return %d\n", __func__, ret);
 	if (ret != 0)
 		ret = -EINTR;
-
 end:
 	pr_debug("%s: return %d--\n", __func__, ret);
 	return ret;
@@ -5274,10 +5498,8 @@ int adm_store_cal_data(int port_id, int copp_idx, int path, int perf_mode,
 	mutex_lock(&this_adm.cal_data[cal_index]->lock);
 	cal_block = adm_find_cal(cal_index, get_cal_path(path), app_type,
 				acdb_id, sample_rate);
-	if (cal_block == NULL) {
-		pr_err("%s: can't find cal block!\n", __func__);
+	if (cal_block == NULL)
 		goto unlock;
-	}
 
 	if (cal_block->cal_data.size <= 0) {
 		pr_debug("%s: No ADM cal send for port_id = 0x%x!\n",
@@ -5477,13 +5699,6 @@ int adm_swap_speaker_channels(int port_id, int copp_idx,
 			(uint16_t) PCM_CHANNEL_FR;
 	}
 
-	if(spk_swap || this_adm.is_channel_swapped) {
-		/* Before applying swap channel, mute the device to avoid pop */
-		ret = adm_set_volume(port_id, copp_idx, 0);
-		/* Add delay after mute as per hw requirement */
-		msleep(50);
-	}
-
 	ret = adm_pack_and_set_one_pp_param(port_id, copp_idx, param_hdr,
 					    (u8 *) &mfc_cfg);
 	if (ret < 0) {
@@ -5491,12 +5706,6 @@ int adm_swap_speaker_channels(int port_id, int copp_idx,
 		       __func__, port_id, ret);
 		return ret;
 	}
-
-	if(spk_swap || this_adm.is_channel_swapped) {
-		/* After applying swap channel, reset to default */
-		ret = adm_set_volume(port_id, copp_idx, COPP_VOL_DEFAULT);
-	}
-	this_adm.is_channel_swapped = spk_swap;
 
 	pr_debug("%s: mfc_cfg Set params returned success", __func__);
 	return 0;
@@ -5870,6 +6079,144 @@ done:
 }
 EXPORT_SYMBOL(adm_get_doa_tracking_mon);
 
+#ifdef OPLUS_FEATURE_AUDIODETECT
+static ssize_t pb_det_read(struct file *file,
+				char __user *user_buf, size_t count,
+				loff_t *ppos)
+{
+	char *str = NULL;
+	int ret = 0;
+
+	str = kmalloc(PAGE_SIZE, GFP_KERNEL);
+
+	//ret = adm_get_all_mute_pp_param();
+
+	ret = snprintf(str, PAGE_SIZE, "%d %d %d %d",
+		general_playback_muted_cnt, general_playback_zd_cnt, general_playback_pop_cnt, general_playback_clip_cnt);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, str, ret);
+
+	general_playback_muted_cnt = 0;
+	general_playback_zd_cnt = 0;
+	general_playback_pop_cnt = 0;
+	general_playback_clip_cnt = 0;
+
+	kfree(str);
+
+	return ret;
+}
+
+static const struct file_operations pb_det_ops = {
+	.open = simple_open,
+	.read = pb_det_read,
+	.llseek = default_llseek,
+};
+
+static ssize_t rec_det_read(struct file *file,
+				char __user *user_buf, size_t count,
+				loff_t *ppos)
+{
+	char *str = NULL;
+	int ret = 0;
+
+	str = kmalloc(PAGE_SIZE, GFP_KERNEL);
+
+	//ret = adm_get_all_mute_pp_param();
+
+	ret = snprintf(str, PAGE_SIZE, "%d %d %d %d",
+		general_record_muted_cnt, general_record_zd_cnt, general_record_pop_cnt, general_record_clip_cnt);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, str, ret);
+
+	general_record_muted_cnt = 0;
+	general_record_zd_cnt = 0;
+	general_record_pop_cnt = 0;
+	general_record_clip_cnt = 0;
+
+	kfree(str);
+
+	return ret;
+}
+
+static const struct file_operations rec_det_ops = {
+	.open = simple_open,
+	.read = rec_det_read,
+	.llseek = default_llseek,
+};
+
+static ssize_t voip_det_read(struct file *file,
+				char __user *user_buf, size_t count,
+				loff_t *ppos)
+{
+	char *str = NULL;
+	int ret = 0;
+
+	str = kmalloc(PAGE_SIZE, GFP_KERNEL);
+
+	//ret = adm_get_all_mute_pp_param();
+
+	ret = snprintf(str, PAGE_SIZE, "%d %d %d %d %d %d %d %d",
+		voip_rx_muted_cnt, voip_rx_zd_cnt, voip_rx_pop_cnt, voip_rx_clip_cnt,
+		voip_tx_muted_cnt, voip_tx_zd_cnt, voip_tx_pop_cnt, voip_tx_clip_cnt);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, str, ret);
+
+	voip_rx_muted_cnt = 0;
+	voip_rx_zd_cnt = 0;
+	voip_rx_pop_cnt = 0;
+	voip_rx_clip_cnt = 0;
+	voip_tx_muted_cnt = 0;
+	voip_tx_zd_cnt = 0;
+	voip_tx_pop_cnt = 0;
+	voip_tx_clip_cnt = 0;
+
+	kfree(str);
+
+	return ret;
+}
+
+static const struct file_operations voip_det_ops = {
+	.open = simple_open,
+	.read = voip_det_read,
+	.llseek = default_llseek,
+};
+
+static ssize_t voice_det_read(struct file *file,
+				char __user *user_buf, size_t count,
+				loff_t *ppos)
+{
+	char *str = NULL;
+	int ret = 0;
+
+	str = kmalloc(PAGE_SIZE, GFP_KERNEL);
+
+	ret = snprintf(str, PAGE_SIZE, "%d %d %d %d %d %d %d %d",
+		voice_rx_muted_cnt, voice_rx_zd_cnt, voice_rx_pop_cnt, voice_rx_clip_cnt,
+		voice_tx_muted_cnt, voice_tx_zd_cnt, voice_tx_pop_cnt, voice_tx_clip_cnt);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, str, ret);
+
+	voice_rx_muted_cnt = 0;
+	voice_rx_zd_cnt = 0;
+	voice_rx_pop_cnt = 0;
+	voice_rx_clip_cnt = 0;
+	voice_tx_muted_cnt = 0;
+	voice_tx_zd_cnt = 0;
+	voice_tx_pop_cnt = 0;
+	voice_tx_clip_cnt = 0;
+
+	kfree(str);
+
+	return ret;
+}
+
+static const struct file_operations voice_det_ops = {
+	.open = simple_open,
+	.read = voice_det_read,
+	.llseek = default_llseek,
+};
+#endif /* OPLUS_FEATURE_AUDIODETECT */
+
 int __init adm_init(void)
 {
 	int i = 0, j;
@@ -5879,7 +6226,6 @@ int __init adm_init(void)
 	this_adm.tx_port_id = -1;
 	this_adm.hyp_assigned = false;
 	this_adm.fnn_app_type = -1;
-	this_adm.is_channel_swapped = false;
 	init_waitqueue_head(&this_adm.matrix_map_wait);
 	init_waitqueue_head(&this_adm.adm_wait);
 	mutex_init(&this_adm.adm_apr_lock);
@@ -5901,6 +6247,18 @@ int __init adm_init(void)
 	this_adm.sourceTrackingData.memmap.kvaddr = NULL;
 	this_adm.sourceTrackingData.memmap.paddr = 0;
 	this_adm.sourceTrackingData.apr_cmd_status = -1;
+
+#ifdef OPLUS_FEATURE_AUDIODETECT
+	mutedet_dbg_dir = proc_mkdir("muted_det", NULL);
+	proc_create_data("pb_det", S_IRUGO|S_IWUGO, mutedet_dbg_dir,
+					&pb_det_ops, NULL);
+	proc_create_data("rec_det", S_IRUGO|S_IWUGO, mutedet_dbg_dir,
+					&rec_det_ops, NULL);
+	proc_create_data("voip_det", S_IRUGO|S_IWUGO, mutedet_dbg_dir,
+					&voip_det_ops, NULL);
+	proc_create_data("voice_det", S_IRUGO|S_IWUGO, mutedet_dbg_dir,
+					&voice_det_ops, NULL);
+#endif /* OPLUS_FEATURE_AUDIODETECT */
 
 	return 0;
 }
