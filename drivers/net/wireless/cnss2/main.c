@@ -20,6 +20,11 @@
 #include "debug.h"
 #include "genl.h"
 
+#ifdef OPLUS_FEATURE_WIFI_MAC
+#include <soc/oppo/boot_mode.h>
+#include <soc/oplus/system/oplus_project.h>
+#endif /* OPLUS_FEATURE_WIFI_MAC */
+
 #define CNSS_DUMP_FORMAT_VER		0x11
 #define CNSS_DUMP_FORMAT_VER_V2		0x22
 #define CNSS_DUMP_MAGIC_VER_V2		0x42445953
@@ -543,6 +548,7 @@ static int cnss_setup_dms_mac(struct cnss_plat_data *plat_priv)
 	/* DTSI property use-nv-mac is used to force DMS MAC address for WLAN.
 	 * Thus assert on failure to get MAC from DMS even after retries
 	 */
+#ifndef OPLUS_FEATURE_WIFI_MAC
 	if (plat_priv->use_nv_mac) {
 		for (i = 0; i < CNSS_DMS_QMI_CONNECTION_WAIT_RETRY; i++) {
 			if (plat_priv->dms.mac_valid)
@@ -559,6 +565,24 @@ static int cnss_setup_dms_mac(struct cnss_plat_data *plat_priv)
 			return -EINVAL;
 		}
 	}
+#else
+	if ((get_boot_mode() !=  MSM_BOOT_MODE__WLAN) && plat_priv->use_nv_mac) {
+		for (i = 0; i < CNSS_DMS_QMI_CONNECTION_WAIT_RETRY; i++) {
+			if (plat_priv->dms.mac_valid)
+				break;
+
+			ret = cnss_qmi_get_dms_mac(plat_priv);
+			if (ret == 0)
+				break;
+			msleep(CNSS_DMS_QMI_CONNECTION_WAIT_MS);
+		}
+		if (!plat_priv->dms.mac_valid) {
+			cnss_pr_err("Unable to get MAC from DMS after retries\n");
+			CNSS_ASSERT(0);
+			return -EINVAL;
+		}
+	}
+#endif /* OPLUS_FEATURE_WIFI_MAC */
 qmi_send:
 	if (plat_priv->dms.mac_valid)
 		ret =
@@ -1632,6 +1656,36 @@ static int cnss_cold_boot_cal_done_hdlr(struct cnss_plat_data *plat_priv,
 	switch (cal_info->cal_status) {
 	case CNSS_CAL_DONE:
 		cnss_pr_dbg("Calibration completed successfully\n");
+
+		#ifdef OPLUS_FEATURE_WIFI_MAC
+		if(get_Modem_Version() == 8){
+			cnss_pr_dbg("get_Modem_Version = %d\n", get_Modem_Version());
+			cnss_l7e_vreg_off(plat_priv, &plat_priv->vreg_list);   //pull low LDO7e
+			msleep(10);
+
+			//1st time
+			cnss_bus_pa_en_rw(plat_priv,1);        //2.4G PA_EN chain0/1 output high
+			msleep(1);
+			cnss_bus_pa_en_rw(plat_priv,0);        //2.4G PA_EN chain0/1 output low
+			msleep(1);
+
+			//2nd time
+			cnss_bus_pa_en_rw(plat_priv,1);        //2.4G PA_EN chain0/1 output high
+			msleep(1);
+			cnss_bus_pa_en_rw(plat_priv,0);        //2.4G PA_EN chain0/1 output low
+			msleep(1);
+
+			//3rd time
+			cnss_bus_pa_en_rw(plat_priv,1);        //2.4G PA_EN chain0/1 output high
+			msleep(1);
+			cnss_bus_pa_en_rw(plat_priv,0);        //2.4G PA_EN chain0/1 output low
+			msleep(1);
+
+			msleep(10);
+			cnss_l7e_vreg_on(plat_priv, &plat_priv->vreg_list);  //pull high LDO7e
+		}
+		#endif /* OPLUS_FEATURE_WIFI_MAC */
+
 		plat_priv->cal_done = true;
 		break;
 	case CNSS_CAL_TIMEOUT:
@@ -3207,9 +3261,13 @@ static int cnss_probe(struct platform_device *plat_dev)
 	if (ret)
 		goto deinit_event_work;
 
-	ret = cnss_debugfs_create(plat_priv);
+	ret = cnss_dms_init(plat_priv);
 	if (ret)
 		goto deinit_qmi;
+
+	ret = cnss_debugfs_create(plat_priv);
+	if (ret)
+		goto deinit_dms;
 
 	ret = cnss_misc_init(plat_priv);
 	if (ret)
@@ -3237,10 +3295,6 @@ retry:
 		}
 	}
 
-	ret = cnss_dms_init(plat_priv);
-	if (ret)
-		goto deinit_bus;
-
 	cnss_register_coex_service(plat_priv);
 	cnss_register_ims_service(plat_priv);
 
@@ -3252,9 +3306,6 @@ retry:
 
 	return 0;
 
-deinit_bus:
-	if (!test_bit(SKIP_DEVICE_BOOT, &plat_priv->ctrl_params.quirks))
-		cnss_bus_deinit(plat_priv);
 power_off:
 	if (!test_bit(SKIP_DEVICE_BOOT, &plat_priv->ctrl_params.quirks))
 		cnss_power_off_device(plat_priv);
@@ -3262,6 +3313,8 @@ deinit_misc:
 	cnss_misc_deinit(plat_priv);
 destroy_debugfs:
 	cnss_debugfs_destroy(plat_priv);
+deinit_dms:
+	cnss_dms_deinit(plat_priv);
 deinit_qmi:
 	cnss_qmi_deinit(plat_priv);
 deinit_event_work:
@@ -3288,10 +3341,10 @@ static int cnss_remove(struct platform_device *plat_dev)
 	cnss_genl_exit();
 	cnss_unregister_ims_service(plat_priv);
 	cnss_unregister_coex_service(plat_priv);
-	cnss_dms_deinit(plat_priv);
 	cnss_bus_deinit(plat_priv);
 	cnss_misc_deinit(plat_priv);
 	cnss_debugfs_destroy(plat_priv);
+	cnss_dms_deinit(plat_priv);
 	cnss_qmi_deinit(plat_priv);
 	cnss_event_work_deinit(plat_priv);
 	cnss_remove_sysfs(plat_priv);

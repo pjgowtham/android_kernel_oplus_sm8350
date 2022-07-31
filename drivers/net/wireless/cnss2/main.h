@@ -542,6 +542,12 @@ int cnss_vreg_on_type(struct cnss_plat_data *plat_priv,
 		      enum cnss_vreg_type type);
 int cnss_vreg_off_type(struct cnss_plat_data *plat_priv,
 		       enum cnss_vreg_type type);
+#ifdef OPLUS_BUG_STABILITY
+int cnss_l7e_vreg_on(struct cnss_plat_data *plat_priv,
+		     struct list_head *vreg_list);
+int cnss_l7e_vreg_off(struct cnss_plat_data *plat_priv,
+		     struct list_head *vreg_list);
+#endif /* OPLUS_BUG_STABILITY */
 int cnss_get_clk(struct cnss_plat_data *plat_priv);
 void cnss_put_clk(struct cnss_plat_data *plat_priv);
 int cnss_vreg_unvote_type(struct cnss_plat_data *plat_priv,

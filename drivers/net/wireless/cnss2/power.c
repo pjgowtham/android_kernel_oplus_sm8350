@@ -475,6 +475,45 @@ int cnss_vreg_off_type(struct cnss_plat_data *plat_priv,
 	return ret;
 }
 
+#ifdef OPLUS_BUG_STABILITY
+int cnss_l7e_vreg_on(struct cnss_plat_data *plat_priv,
+		     struct list_head *vreg_list)
+{
+	struct cnss_vreg_info *vreg;
+
+	cnss_pr_err("cnss_l7e_vreg_on enter \n");
+	list_for_each_entry_reverse(vreg, vreg_list, list) {
+		if (IS_ERR_OR_NULL(vreg->reg))
+			continue;
+
+		if ((strcmp(vreg->cfg.name, "wlan-ant-switch")) == 0) {
+			cnss_pr_err("wlan-ant-switch on \n");
+			cnss_vreg_on_single(vreg);
+		}
+	}
+
+	return 0;
+}
+
+int cnss_l7e_vreg_off(struct cnss_plat_data *plat_priv,
+		      struct list_head *vreg_list)
+{
+	struct cnss_vreg_info *vreg;
+
+	cnss_pr_err("cnss_l7e_vreg_off enter \n");
+	list_for_each_entry_reverse(vreg, vreg_list, list) {
+		if (IS_ERR_OR_NULL(vreg->reg))
+			continue;
+		if ((strcmp(vreg->cfg.name, "wlan-ant-switch")) == 0) {
+			cnss_pr_err("wlan-ant-switch off \n");
+			cnss_vreg_off_single(vreg);
+		}
+	}
+
+	return 0;
+}
+#endif /* OPLUS_BUG_STABILITY */
+
 int cnss_vreg_unvote_type(struct cnss_plat_data *plat_priv,
 			  enum cnss_vreg_type type)
 {

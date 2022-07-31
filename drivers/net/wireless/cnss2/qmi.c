@@ -5,6 +5,12 @@
 #include <linux/module.h>
 #include <linux/soc/qcom/qmi.h>
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_WIFI_BDF)
+//Modify for: multi projects using different bdf
+#include <soc/oppo/oppo_project.h>
+#include <linux/fs.h>
+#endif /* CONFIG_OPLUS_FEATURE_WIFI_BDF */
+
 #include "bus.h"
 #include "debug.h"
 #include "main.h"
@@ -586,6 +592,39 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_WIFI_BDF)
+//check if read bdf is not complete through compare the size with odm/etc/wifi bdf file return 0 if everything ok, otherwise return a non-zero value
+int check_bdf_size(unsigned int download_bdf_size, char* bdf_file_name) {
+	char str[48];
+	struct kstat* stat = NULL;
+	int ret = 0;
+
+	snprintf(str, sizeof(str), "%s%s", "/odm/etc/wifi/", bdf_file_name);
+	cnss_pr_dbg("vendor file name: %s", str);
+	stat = (struct kstat*) kzalloc(sizeof(struct kstat), GFP_KERNEL);
+	if (!stat)
+		return -ENOMEM;
+
+	ret = vfs_stat(str, stat);
+	if (ret < 0) {
+		cnss_pr_dbg("stat: %s fail %d", str, ret);
+		if (-ENOENT == ret) {
+			ret = 0;
+		}
+		goto out;
+	}
+
+	cnss_pr_dbg("dl size: %d, stat size: %d", download_bdf_size, stat->size);
+	if (download_bdf_size < stat->size) {
+		ret = -1;
+	}
+
+out:
+	kfree(stat);
+	return ret;
+}
+#endif /* CONFIG_OPLUS_FEATURE_WIFI_BDF */
+
 int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 				 u32 bdf_type)
 {
@@ -597,6 +636,10 @@ int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 	const u8 *temp;
 	u32 remaining;
 	int ret = 0;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_WIFI_BDF)
+//Modify for: multi projects using different bdf
+	int loading_bdf_retry_cnt = 5;
+#endif /* CONFIG_OPLUS_FEATURE_WIFI_BDF */
 
 	cnss_pr_dbg("Sending BDF download message, state: 0x%lx, type: %d\n",
 		    plat_priv->driver_state, bdf_type);
@@ -616,6 +659,12 @@ int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 	if (ret)
 		goto err_req_fw;
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_WIFI_BDF)
+request_bdf:
+	ret = request_firmware_no_cache(&fw_entry, filename, &plat_priv->plat_dev->dev);
+#else
+	ret = request_firmware(&fw_entry, filename, &plat_priv->plat_dev->dev);
+#endif /* CONFIG_OPLUS_FEATURE_WIFI_BDF */
 	if (bdf_type == CNSS_BDF_REGDB)
 		ret = cnss_request_firmware_direct(plat_priv, &fw_entry,
 						   filename);
@@ -638,6 +687,19 @@ int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 	remaining = (u32)fw_entry->size;
 
 	cnss_pr_dbg("Downloading BDF: %s, size: %u\n", filename, remaining);
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_WIFI_BDF)
+	if (strncmp(filename, "bdwlan", 6) == 0
+		&& check_bdf_size(remaining, filename) && loading_bdf_retry_cnt > 0) {
+		loading_bdf_retry_cnt -= 1;
+		cnss_pr_dbg("bdf size is too small, maybe bdf is under transfer, retry loading..");
+		// sleep 400 ms
+		msleep_interruptible(400);
+		goto request_bdf;
+	}
+	// reset counter
+	loading_bdf_retry_cnt = 5;
+#endif /* CONFIG_OPLUS_FEATURE_WIFI_BDF */
 
 	while (remaining) {
 		req->valid = 1;
@@ -807,6 +869,10 @@ int cnss_wlfw_wlan_mac_req_send_sync(struct cnss_plat_data *plat_priv,
 	struct wlfw_mac_addr_resp_msg_v01 resp = {0};
 	struct qmi_txn txn;
 	int ret;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_WIFI_MAC)
+	int i;
+	char revert_mac[QMI_WLFW_MAC_ADDR_SIZE_V01];
+#endif /* CONFIG_OPLUS_FEATURE_WIFI_MAC */
 
 	if (!plat_priv || !mac || mac_len != QMI_WLFW_MAC_ADDR_SIZE_V01)
 		return -EINVAL;
@@ -822,7 +888,17 @@ int cnss_wlfw_wlan_mac_req_send_sync(struct cnss_plat_data *plat_priv,
 
 		cnss_pr_dbg("Sending WLAN mac req [%pM], state: 0x%lx\n",
 			    mac, plat_priv->driver_state);
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_WIFI_MAC)
+	for (i = 0; i < QMI_WLFW_MAC_ADDR_SIZE_V01 ; i ++){
+		revert_mac[i] = mac[QMI_WLFW_MAC_ADDR_SIZE_V01 - i -1];
+	}
+		cnss_pr_dbg("Sending revert WLAN mac req [%pM], state: 0x%lx\n",
+			    revert_mac, plat_priv->driver_state);
+	memcpy(req.mac_addr, revert_mac, mac_len);
+#else
 	memcpy(req.mac_addr, mac, mac_len);
+#endif /* CONFIG_OPLUS_FEATURE_WIFI_MAC */
 	req.mac_addr_valid = 1;
 
 	ret = qmi_send_request(&plat_priv->qmi_wlfw, NULL, &txn,
@@ -2477,17 +2553,19 @@ static void cnss_wlfw_respond_get_info_ind_cb(struct qmi_handle *qmi_wlfw,
 	struct cnss_plat_data *plat_priv =
 		container_of(qmi_wlfw, struct cnss_plat_data, qmi_wlfw);
 	const struct wlfw_respond_get_info_ind_msg_v01 *ind_msg = data;
-
+        #ifndef OPLUS_BUG_STABILITY
 	cnss_pr_buf("Received QMI WLFW respond get info indication\n");
+        #endif /*OPLUS_BUG_STABILITY*/
 
 	if (!txn) {
 		cnss_pr_err("Spurious indication\n");
 		return;
 	}
-
+        #ifndef OPLUS_BUG_STABILITY
 	cnss_pr_buf("Extract message with event length: %d, type: %d, is last: %d, seq no: %d\n",
 		    ind_msg->data_len, ind_msg->type,
 		    ind_msg->is_last, ind_msg->seq_no);
+        #endif /*OPLUS_BUG_STABILITY*/
 
 	if (plat_priv->get_info_cb_ctx && plat_priv->get_info_cb)
 		plat_priv->get_info_cb(plat_priv->get_info_cb_ctx,

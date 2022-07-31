@@ -164,6 +164,16 @@ int cnss_bus_alloc_fw_mem(struct cnss_plat_data *plat_priv)
 	}
 }
 
+#ifdef OPLUS_BUG_STABILITY
+void cnss_bus_pa_en_rw(struct cnss_plat_data *plat_priv, int en)
+{
+	if(en)
+		cnss_pci_pa_en_rw(plat_priv->bus_priv);
+	else
+		cnss_pci_pa_dis_rw(plat_priv->bus_priv);
+}
+#endif /* OPLUS_BUG_STABILITY */
+
 int cnss_bus_alloc_qdss_mem(struct cnss_plat_data *plat_priv)
 {
 	if (!plat_priv)
