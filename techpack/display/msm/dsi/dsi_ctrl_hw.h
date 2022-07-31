@@ -20,6 +20,17 @@
 #define DSI_CTRL_HW_INFO(c, fmt, ...)	DRM_DEV_INFO(NULL, "[msm-dsi-info]: DSI_%d: "\
 		fmt, c ? c->index : -1,	##__VA_ARGS__)
 
+#ifdef CONFIG_OPLUS_FEATURE_MM_FEEDBACK
+#include <soc/oplus/system/oplus_mm_kevent_fb.h>
+#undef DSI_CTRL_HW_ERR
+#define DSI_CTRL_HW_ERR(c, fmt, ...) \
+	do { \
+		DRM_DEV_ERROR(NULL, "[msm-dsi-error]: DSI_%d: "\
+			fmt, c ? c->index : -1,	##__VA_ARGS__); \
+		mm_fb_display_kevent_named(MM_FB_KEY_RATELIMIT_1H, fmt, ##__VA_ARGS__); \
+	} while(0)
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+
 /**
  * Modifier flag for command transmission. If this flag is set, command
  * information is programmed to hardware and transmission is not triggered.

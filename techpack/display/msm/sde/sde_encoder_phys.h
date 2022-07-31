@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __SDE_ENCODER_PHYS_H__
@@ -339,6 +339,18 @@ struct sde_encoder_phys {
 	int vfp_cached;
 	enum frame_trigger_mode_type frame_trigger_mode;
 	bool recovered;
+
+#ifdef OPLUS_BUG_STABILITY
+	//2 : transferring (wr_ptr_irq)
+	//1 : transfer finish (pp_tx_done_irq)
+	//0 : panel read finish (rd_ptr_irq)
+	//disable qsync or wait vblank to avoid tearing
+	atomic_t frame_state;
+	//threshold for current frame
+	u32 current_sync_threshold_start;
+	//threshold for current qsync mode
+	u32 qsync_sync_threshold_start;
+#endif
 };
 
 static inline int sde_encoder_phys_inc_pending(struct sde_encoder_phys *phys)
@@ -394,7 +406,6 @@ struct sde_encoder_phys_cmd_te_timestamp {
  * @wr_ptr_wait_success: log wr_ptr_wait success for release fence trigger
  * @te_timestamp_list: List head for the TE timestamp list
  * @te_timestamp: Array of size MAX_TE_PROFILE_COUNT te_timestamp_list elements
- * @frame_trigger_count: atomic counter tracking number of frame triggers per TE interval
  */
 struct sde_encoder_phys_cmd {
 	struct sde_encoder_phys base;
@@ -407,7 +418,6 @@ struct sde_encoder_phys_cmd {
 	struct list_head te_timestamp_list;
 	struct sde_encoder_phys_cmd_te_timestamp
 			te_timestamp[MAX_TE_PROFILE_COUNT];
-	atomic_t frame_trigger_count;
 };
 
 /**
@@ -540,6 +550,14 @@ void sde_encoder_phys_setup_cdm(struct sde_encoder_phys *phys_enc,
  */
 void sde_encoder_helper_get_pp_line_count(struct drm_encoder *drm_enc,
 		struct sde_hw_pp_vsync_info *info);
+
+/**
+ * sde_encoder_helper_get_transfer_time - get the mdp transfer time in usecs
+ * @drm_enc: Pointer to drm encoder structure
+ * @transfer_time_us: Pointer to store the output value
+ */
+void sde_encoder_helper_get_transfer_time(struct drm_encoder *drm_enc,
+		u32 *transfer_time_us);
 
 /**
  * sde_encoder_helper_trigger_flush - control flush helper function
@@ -813,5 +831,7 @@ void sde_encoder_helper_setup_misr(struct sde_encoder_phys *phys_enc,
  */
 int sde_encoder_helper_collect_misr(struct sde_encoder_phys *phys_enc,
 		bool nonblock, u32 *misr_value);
+
+ktime_t sde_encoder_get_last_vsync_ts_cmd(struct sde_encoder_phys *phys_enc);
 
 #endif /* __sde_encoder_phys_H__ */

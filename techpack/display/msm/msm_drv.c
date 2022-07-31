@@ -50,6 +50,13 @@
 #include "msm_mmu.h"
 #include "sde_wb.h"
 #include "sde_dbg.h"
+#if defined(OPLUS_FEATURE_PXLW_IRIS5) || defined(OPLUS_FEATURE_PXLW_SOFT_IRIS)
+#include "dsi/iris/dsi_iris5_api.h"
+#endif
+
+#ifdef OPLUS_BUG_STABILITY
+#include "oplus_adfr.h"
+#endif
 
 /*
  * MSM driver version:
@@ -82,8 +89,6 @@
 		} while ((!cond) && (ret == 0) &&			\
 			(ktime_compare_safe(exp_ktime, cur_ktime) > 0));\
 	} while (0)
-
-static DEFINE_MUTEX(msm_release_lock);
 
 static void msm_fb_output_poll_changed(struct drm_device *dev)
 {
@@ -415,6 +420,12 @@ static int msm_drm_uninit(struct device *dev)
 		}
 	}
 
+#ifdef OPLUS_BUG_STABILITY
+	if (oplus_adfr_is_support()) {
+		oplus_adfr_thread_destroy(priv);
+	}
+#endif
+
 	drm_kms_helper_poll_fini(ddev);
 	if (kms && kms->funcs)
 		kms->funcs->debugfs_destroy(kms);
@@ -698,6 +709,19 @@ static int msm_drm_display_thread_create(struct sched_param param,
 		priv->pp_event_thread = NULL;
 		return ret;
 	}
+
+#ifdef OPLUS_BUG_STABILITY
+	/**
+	 * Use a seperate adfr thread for fake frame.
+	 * Because fake frame maybe causes crtc commit/event more heavy.
+	 * This can lead to commit miss TE/retire event delay
+	 */
+	if (oplus_adfr_is_support()) {
+		if (oplus_adfr_thread_create(&param, priv, ddev, dev)) {
+			return -EINVAL;
+		}
+	}
+#endif
 
 	return 0;
 
@@ -1488,27 +1512,14 @@ void msm_mode_object_event_notify(struct drm_mode_object *obj,
 
 static int msm_release(struct inode *inode, struct file *filp)
 {
-	struct drm_file *file_priv;
-	struct drm_minor *minor;
-	struct drm_device *dev;
-	struct msm_drm_private *priv;
+	struct drm_file *file_priv = filp->private_data;
+	struct drm_minor *minor = file_priv->minor;
+	struct drm_device *dev = minor->dev;
+	struct msm_drm_private *priv = dev->dev_private;
 	struct msm_drm_event *node, *temp, *tmp_node;
 	u32 count;
 	unsigned long flags;
 	LIST_HEAD(tmp_head);
-	int ret = 0;
-
-	mutex_lock(&msm_release_lock);
-
-	file_priv = filp->private_data;
-	if (!file_priv) {
-		ret = -EINVAL;
-		goto end;
-	}
-
-	minor = file_priv->minor;
-	dev = minor->dev;
-	priv = dev->dev_private;
 
 	spin_lock_irqsave(&dev->event_lock, flags);
 	list_for_each_entry_safe(node, temp, &priv->client_event_list,
@@ -1546,11 +1557,7 @@ static int msm_release(struct inode *inode, struct file *filp)
 	if (drm_is_current_master(file_priv))
 		msm_preclose(dev, file_priv);
 
-	ret = drm_release(inode, filp);
-	filp->private_data = NULL;
-end:
-	mutex_unlock(&msm_release_lock);
-	return ret;
+	return drm_release(inode, filp);
 }
 
 /**
@@ -1726,6 +1733,10 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_RMFB2, msm_ioctl_rmfb2, DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(MSM_POWER_CTRL, msm_ioctl_power_ctrl,
 			DRM_RENDER_ALLOW),
+#if defined(OPLUS_FEATURE_PXLW_IRIS5) || defined(OPLUS_FEATURE_PXLW_SOFT_IRIS)
+	DRM_IOCTL_DEF_DRV(MSM_IRIS_OPERATE_CONF, msm_ioctl_iris_operate_conf, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_IRIS_OPERATE_TOOL, msm_ioctl_iris_operate_tool, DRM_UNLOCKED|DRM_RENDER_ALLOW),
+#endif
 	DRM_IOCTL_DEF_DRV(MSM_DISPLAY_HINT, msm_ioctl_display_hint_ops,
 			DRM_UNLOCKED),
 };
@@ -2246,6 +2257,7 @@ static int __init msm_drm_register(void)
 static void __exit msm_drm_unregister(void)
 {
 	DBG("fini");
+
 	platform_driver_unregister(&msm_platform_driver);
 	sde_wb_unregister();
 	msm_hdmi_unregister();

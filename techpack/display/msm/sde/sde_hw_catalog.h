@@ -46,7 +46,6 @@
 #define SDE_HW_VER_650	SDE_HW_VER(6, 5, 0) /* scuba */
 #define SDE_HW_VER_660	SDE_HW_VER(6, 6, 0) /* holi */
 #define SDE_HW_VER_670	SDE_HW_VER(6, 7, 0) /* shima */
-#define SDE_HW_VER_680	SDE_HW_VER(6, 8, 0) /* monaco */
 #define SDE_HW_VER_690	SDE_HW_VER(6, 9, 0) /* blair */
 #define SDE_HW_VER_700	SDE_HW_VER(7, 0, 0) /* lahaina */
 #define SDE_HW_VER_720	SDE_HW_VER(7, 2, 0) /* yupik */
@@ -73,7 +72,6 @@
 #define IS_SCUBA_TARGET(rev) IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_VER_650)
 #define IS_HOLI_TARGET(rev) IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_VER_660)
 #define IS_SHIMA_TARGET(rev) IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_VER_670)
-#define IS_MONACO_TARGET(rev) IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_VER_680)
 #define IS_BLAIR_TARGET(rev) IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_VER_690)
 #define IS_LAHAINA_TARGET(rev) IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_VER_700)
 #define IS_YUPIK_TARGET(rev) IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_VER_720)
@@ -467,7 +465,6 @@ enum {
 	SDE_CTL_SPLIT_DISPLAY = 0x1,
 	SDE_CTL_PINGPONG_SPLIT,
 	SDE_CTL_PRIMARY_PREF,
-	SDE_CTL_SECONDARY_PREF,
 	SDE_CTL_ACTIVE_CFG,
 	SDE_CTL_UIDLE,
 	SDE_CTL_UNIFIED_DSPP_FLUSH,
@@ -977,7 +974,6 @@ struct sde_sspp_cfg {
  * @pingpong:          ID of connected PingPong, PINGPONG_MAX if unsupported
  * @ds:                ID of connected DS, DS_MAX if unsupported
  * @lm_pair_mask:      Bitmask of LMs that can be controlled by same CTL
- * @cwb_mask:	Bitmask of LMs connected to cwb mux from this LM id
  */
 struct sde_lm_cfg {
 	SDE_HW_BLK_INFO;
@@ -986,7 +982,6 @@ struct sde_lm_cfg {
 	u32 pingpong;
 	u32 ds;
 	unsigned long lm_pair_mask;
-	u32 cwb_mask;
 };
 
 /**
@@ -1643,10 +1638,8 @@ struct sde_mdss_hw_cfg_handler {
  * @sde_cfg:              pointer to sspp cfg
  * @num_lm:               num lms to set preference
  * @disp_type:            is the given display primary/secondary
- *
- * Return: layer mixer mask allocated for the disp_type
  */
-u32 sde_hw_mixer_set_preference(struct sde_mdss_cfg *sde_cfg, u32 num_lm,
+void sde_hw_mixer_set_preference(struct sde_mdss_cfg *sde_cfg, u32 num_lm,
 		uint32_t disp_type);
 
 /**
@@ -1664,13 +1657,6 @@ struct sde_mdss_cfg *sde_hw_catalog_init(struct drm_device *dev);
  */
 void sde_hw_catalog_deinit(struct sde_mdss_cfg *sde_cfg);
 
-/**
- * sde_hw_ctl_set_preference - set CTL preference for display
- * @sde_cfg:	pointer to mdss cfg
- * @disp_type:	type of display primary/secondary
- */
-void sde_hw_ctl_set_preference(struct sde_mdss_cfg *sde_cfg,
-			uint32_t disp_type);
 /**
  * sde_hw_catalog_irq_offset_list_delete - delete the irq_offset_list
  *                                         maintained by the catalog

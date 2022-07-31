@@ -57,9 +57,20 @@
 #include "soc/qcom/secure_buffer.h"
 #include <linux/qtee_shmbridge.h>
 #include <linux/haven/hh_irq_lend.h>
+#if defined(OPLUS_FEATURE_PXLW_IRIS5) || defined(OPLUS_FEATURE_PXLW_IRISSOFT)
+#include "iris/dsi_iris5_api.h"
+#endif
 
 #define CREATE_TRACE_POINTS
 #include "sde_trace.h"
+#ifdef OPLUS_BUG_STABILITY
+#include "oplus_display_private_api.h"
+#include "oplus_onscreenfingerprint.h"
+#endif
+
+#ifdef OPLUS_BUG_STABILITY
+#include "oplus_adfr.h"
+#endif
 
 /* defines for secure channel call */
 #define MEM_PROTECT_SD_CTRL_SWITCH 0x18
@@ -1143,7 +1154,12 @@ static void sde_kms_prepare_commit(struct msm_kms *kms,
 	SDE_ATRACE_BEGIN("prepare_commit");
 	rc = pm_runtime_get_sync(sde_kms->dev->dev);
 	if (rc < 0) {
+#ifdef CONFIG_OPLUS_FEATURE_MM_FEEDBACK
+		SDE_MM_ERROR("failed to enable power resources %d\n", rc);
+
+#else
 		SDE_ERROR("failed to enable power resources %d\n", rc);
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 		SDE_EVT32(rc, SDE_EVTLOG_ERROR);
 		goto end;
 	}
@@ -1516,6 +1532,24 @@ static void sde_kms_complete_commit(struct msm_kms *kms,
 	for_each_old_crtc_in_state(old_state, crtc, old_crtc_state, i)
 		_sde_kms_release_splash_resource(sde_kms, crtc);
 
+#ifdef OPLUS_BUG_STABILITY
+	if (oplus_adfr_is_support()) {
+		if (oplus_adfr_get_vsync_mode() == OPLUS_DOUBLE_TE_VSYNC) {
+			SDE_ATRACE_BEGIN("sde_kms_adfr_vsync_source_switch");
+			for_each_old_crtc_in_state(old_state, crtc, old_crtc_state, i) {
+				sde_kms_adfr_vsync_source_switch(kms, crtc);
+			}
+			SDE_ATRACE_END("sde_kms_adfr_vsync_source_switch");
+		} else if (oplus_adfr_get_vsync_mode() == OPLUS_EXTERNAL_TE_TP_VSYNC) {
+			SDE_ATRACE_BEGIN("sde_kms_adfr_vsync_switch");
+			for_each_old_crtc_in_state(old_state, crtc, old_crtc_state, i) {
+				sde_kms_adfr_vsync_switch(kms, crtc);
+			}
+			SDE_ATRACE_END("sde_kms_adfr_vsync_switch");
+		}
+	}
+#endif
+
 	SDE_EVT32_VERBOSE(SDE_EVTLOG_FUNC_EXIT);
 	SDE_ATRACE_END("sde_kms_complete_commit");
 }
@@ -1732,7 +1766,11 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		.soft_reset   = dsi_display_soft_reset,
 		.pre_kickoff  = dsi_conn_pre_kickoff,
 		.clk_ctrl = dsi_display_clk_ctrl,
+#ifdef OPLUS_BUG_STABILITY
+		.set_power = dsi_display_oplus_set_power,
+#else
 		.set_power = dsi_display_set_power,
+#endif
 		.get_mode_info = dsi_conn_get_mode_info,
 		.get_dst_format = dsi_display_get_dst_format,
 		.post_kickoff = dsi_conn_post_kickoff,
@@ -1747,7 +1785,12 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		.install_properties = NULL,
 		.set_allowed_mode_switch = dsi_conn_set_allowed_mode_switch,
 		.get_qsync_min_fps = dsi_display_get_qsync_min_fps,
+#ifdef OPLUS_BUG_STABILITY
+		// enable qsync on/off cmds
+		.prepare_commit = dsi_display_pre_commit,
+#else
 		.prepare_commit = dsi_conn_prepare_commit,
+#endif
 		.get_num_lm_from_mode = dsi_conn_get_lm_from_mode,
 	};
 	static const struct sde_connector_ops wb_ops = {
@@ -2176,8 +2219,6 @@ static int sde_kms_postinit(struct msm_kms *kms)
 	struct sde_kms *sde_kms = to_sde_kms(kms);
 	struct drm_device *dev;
 	struct drm_crtc *crtc;
-	struct drm_connector *conn;
-	struct drm_connector_list_iter conn_iter;
 	int rc;
 
 	if (!sde_kms || !sde_kms->dev || !sde_kms->dev->dev) {
@@ -2194,10 +2235,6 @@ static int sde_kms_postinit(struct msm_kms *kms)
 	drm_for_each_crtc(crtc, dev)
 		sde_crtc_post_init(dev, crtc);
 
-	drm_connector_list_iter_begin(dev, &conn_iter);
-	drm_for_each_connector_iter(conn, &conn_iter)
-		sde_connector_post_init(dev, conn);
-	drm_connector_list_iter_end(&conn_iter);
 	return rc;
 }
 
@@ -2756,6 +2793,7 @@ static int sde_kms_check_vm_request(struct msm_kms *kms,
 				!vm_ops->vm_acquire)
 		return -EINVAL;
 
+	sde_vm_lock(sde_kms);
 
 	for_each_oldnew_crtc_in_state(state, crtc, old_cstate, new_cstate, i) {
 		struct sde_crtc_state *old_state = NULL, *new_state = NULL;
@@ -2776,9 +2814,6 @@ static int sde_kms_check_vm_request(struct msm_kms *kms,
 		 * VM_REQ_NONE to VM_REQ_NONE
 		 */
 		if (old_vm_req || new_vm_req) {
-			if (!vm_req_active)
-				sde_vm_lock(sde_kms);
-
 			rc = vm_ops->vm_request_valid(sde_kms,
 					old_vm_req, new_vm_req);
 			if (rc) {
@@ -2786,15 +2821,11 @@ static int sde_kms_check_vm_request(struct msm_kms *kms,
 				"VM transition check failed; o_state:%d, n_state:%d, hw_owner:%d, rc:%d\n",
 					old_vm_req, new_vm_req,
 					vm_ops->vm_owns_hw(sde_kms), rc);
-				if (!vm_req_active)
-					sde_vm_unlock(sde_kms);
 				goto end;
 			} else if (old_vm_req == VM_REQ_ACQUIRE &&
 					new_vm_req == VM_REQ_NONE) {
 				SDE_DEBUG(
 				"VM transition valid; ignore further checks\n");
-				if (!vm_req_active)
-					sde_vm_unlock(sde_kms);
 			} else {
 				vm_req_active = true;
 			}
@@ -2892,8 +2923,7 @@ static int sde_kms_check_vm_request(struct msm_kms *kms,
 	}
 
 end:
-	if (vm_req_active)
-		sde_vm_unlock(sde_kms);
+	sde_vm_unlock(sde_kms);
 
 	return rc;
 }
@@ -3978,6 +4008,9 @@ static const struct msm_kms_funcs kms_funcs = {
 	.check_for_splash = sde_kms_check_for_splash,
 	.get_mixer_count = sde_kms_get_mixer_count,
 	.get_dsc_count = sde_kms_get_dsc_count,
+#if defined(OPLUS_FEATURE_PXLW_IRIS5) || defined(OPLUS_FEATURE_PXLW_IRISSOFT)
+	.iris_operate = iris_sde_kms_iris_operate,
+#endif
 };
 
 static int _sde_kms_mmu_destroy(struct sde_kms *sde_kms)

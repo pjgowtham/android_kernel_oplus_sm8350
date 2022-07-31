@@ -3051,7 +3051,7 @@ static int dp_display_setup_colospace(struct dp_display *dp_display,
 	struct dp_display_private *dp;
 
 	if (!dp_display || !panel) {
-		DP_ERR("invalid input\n");
+		pr_err("invalid input\n");
 		return -EINVAL;
 	}
 

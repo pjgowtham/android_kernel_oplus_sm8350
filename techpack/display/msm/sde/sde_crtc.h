@@ -254,7 +254,6 @@ struct sde_crtc_misr_info {
  * @feature_list  : list of color processing features supported on a crtc
  * @active_list   : list of color processing features are active
  * @dirty_list    : list of color processing features are dirty
- * @revalidate_mask : stores dirty flags to revalidate after idlepc
  * @ad_dirty      : list containing ad properties that are dirty
  * @ad_active     : list containing ad properties that are active
  * @crtc_lock     : crtc lock around create, destroy and access.
@@ -349,7 +348,6 @@ struct sde_crtc {
 	spinlock_t spin_lock;
 	spinlock_t fevent_spin_lock;
 	bool kickoff_in_progress;
-	unsigned long revalidate_mask;
 
 	/* for handling internal event thread */
 	struct sde_crtc_event event_cache[SDE_CRTC_MAX_EVENT_COUNT];
@@ -462,6 +460,13 @@ struct sde_crtc_state {
 	struct sde_hw_scaler3_lut_cfg scl3_lut_cfg;
 
 	struct sde_core_perf_params new_perf;
+#ifdef OPLUS_BUG_STABILITY
+	bool fingerprint_mode;
+	bool fingerprint_pressed;
+	bool fingerprint_defer_sync;
+	struct sde_hw_dim_layer *fingerprint_dim_layer;
+	bool aod_skip_pcc;
+#endif
 };
 
 enum sde_crtc_irq_state {
@@ -913,6 +918,10 @@ void sde_crtc_misr_setup(struct drm_crtc *crtc, bool enable, u32 frame_count);
  */
 void sde_crtc_get_misr_info(struct drm_crtc *crtc,
 		struct sde_crtc_misr_info *crtc_misr_info);
+
+#ifdef OPLUS_BUG_STABILITY
+struct sde_kms *_sde_crtc_get_kms_(struct drm_crtc *crtc);
+#endif
 
 /**
  * sde_crtc_set_bpp - set src and target bpp values
