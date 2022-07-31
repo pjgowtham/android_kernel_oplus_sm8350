@@ -7,7 +7,6 @@
 #include <linux/of_gpio.h>
 #include "cam_flash_soc.h"
 #include "cam_res_mgr_api.h"
-#include <dt-bindings/msm/msm-camera.h>
 
 void cam_flash_put_source_node_data(struct cam_flash_ctrl *fctrl)
 {
@@ -78,7 +77,6 @@ static int32_t cam_get_source_node_info(
 	if (rc) {
 		CAM_ERR(CAM_FLASH,
 			"flash-type read failed rc=%d", rc);
-		soc_private->flash_type = CAM_FLASH_TYPE_PMIC; // default to PMIC flash
 	}
 
 	switch_src_node = of_parse_phandle(of_node, "switch-source", 0);
@@ -293,14 +291,7 @@ int cam_flash_get_dt_data(struct cam_flash_ctrl *fctrl,
 		rc = -ENOMEM;
 		goto release_soc_res;
 	}
-
-	if (fctrl->of_node == NULL) {
-		CAM_ERR(CAM_FLASH, "device node is NULL");
-		rc = -EINVAL;
-		goto free_soc_private;
-	}
-
-	of_node = fctrl->of_node;
+	of_node = fctrl->pdev->dev.of_node;
 
 	rc = cam_soc_util_get_dt_properties(soc_info);
 	if (rc) {
@@ -308,6 +299,19 @@ int cam_flash_get_dt_data(struct cam_flash_ctrl *fctrl,
 		goto free_soc_private;
 	}
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	rc = of_property_read_string(of_node, "qcom,flash-name",
+		&fctrl->flash_name);
+	if (rc < 0) {
+		pr_err("get flash_name failed rc %d\n", rc);
+	}
+	fctrl->flash_current = 0;
+	rc = of_property_read_u32(of_node, "qcom,flash-current",
+		&fctrl->flash_current);
+	if (rc < 0) {
+		pr_err("get flash_current failed rc %d\n", rc);
+	}
+#endif
 	rc = cam_get_source_node_info(of_node, fctrl, soc_info->soc_private);
 	if (rc) {
 		CAM_ERR(CAM_FLASH,

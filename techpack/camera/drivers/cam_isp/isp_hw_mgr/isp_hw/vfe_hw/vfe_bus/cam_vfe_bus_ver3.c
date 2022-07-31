@@ -212,6 +212,7 @@ struct cam_vfe_bus_ver3_priv {
 	int                                 error_irq_handle;
 	void                               *tasklet_info;
 	uint32_t                            max_out_res;
+	uint32_t                            index[CAM_VFE_BUS_VER3_VFE_OUT_MAX];
 };
 
 static const struct cam_vfe_bus_error_info vfe_error_list[] = {
@@ -2525,6 +2526,7 @@ static int cam_vfe_bus_ver3_init_vfe_out_resource(uint32_t  index,
 			vfe_out_type);
 		return -EFAULT;
 	}
+	ver3_bus_priv->index[vfe_out_type] = index;
 
 	rsrc_data = kzalloc(sizeof(struct cam_vfe_bus_ver3_vfe_out_data),
 		GFP_KERNEL);
@@ -4015,6 +4017,7 @@ int cam_vfe_bus_ver3_deinit(
 			CAM_ERR(CAM_ISP,
 				"VFE:%d deinit out_type:0x%X failed rc:%d",
 				bus_priv->common_data.core_index, i, rc);
+        bus_priv->index[i] = CAM_VFE_BUS_VER3_VFE_OUT_MAX;
 	}
 
 	INIT_LIST_HEAD(&bus_priv->free_comp_grp);

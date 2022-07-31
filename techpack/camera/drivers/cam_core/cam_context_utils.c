@@ -18,6 +18,7 @@
 #include "cam_sync_api.h"
 #include "cam_trace.h"
 #include "cam_debug_util.h"
+#include "cam_cpas_api.h"
 
 static uint cam_debug_ctx_req_list;
 module_param(cam_debug_ctx_req_list, uint, 0644);
@@ -67,6 +68,9 @@ int cam_context_buf_done_from_hw(struct cam_context *ctx,
 			"[%s][%d] mismatch: done req[%lld], active req[%lld]",
 			ctx->dev_name, ctx->ctx_id,
 			done->request_id, req->request_id);
+		CAM_ERR(CAM_CTXT,
+			"[%s][%d] evt_id:%d evt_param:%d",
+			ctx->dev_name, ctx->ctx_id, evt_id, done->evt_param);
 		spin_unlock(&ctx->lock);
 		return -EIO;
 	}
@@ -103,10 +107,12 @@ int cam_context_buf_done_from_hw(struct cam_context *ctx,
 		req->out_map_entries[j].sync_id = -1;
 	}
 
-	if (cam_debug_ctx_req_list & ctx->dev_id)
-		CAM_INFO(CAM_CTXT,
+	//if (cam_debug_ctx_req_list & ctx->dev_id)
+		CAM_DBG(CAM_CTXT,
 			"[%s][%d] : Moving req[%llu] from active_list to free_list",
 			ctx->dev_name, ctx->ctx_id, req->request_id);
+
+	cam_cpas_notify_event(ctx->ctx_id_string, req->request_id);
 
 	/*
 	 * another thread may be adding/removing from free list,
@@ -159,7 +165,7 @@ static int cam_context_apply_req_to_hw(struct cam_ctx_request *req,
 		list_add_tail(&req->list, &ctx->free_req_list);
 		spin_unlock(&ctx->lock);
 
-		if (cam_debug_ctx_req_list & ctx->dev_id)
+		//if (cam_debug_ctx_req_list & ctx->dev_id)
 			CAM_INFO(CAM_CTXT,
 				"[%s][%d] : Moving req[%llu] from active_list to free_list",
 				ctx->dev_name, ctx->ctx_id, req->request_id);
@@ -457,9 +463,6 @@ int32_t cam_context_prepare_dev_to_hw(struct cam_context *ctx,
 			rc = cam_sync_check_valid(
 				req->in_map_entries[j].sync_id);
 			if (rc) {
-				spin_lock(&ctx->lock);
-				list_del_init(&req->list);
-				spin_unlock(&ctx->lock);
 				CAM_ERR(CAM_CTXT,
 					"invalid in map sync object %d",
 					req->in_map_entries[j].sync_id);
@@ -554,6 +557,7 @@ int32_t cam_context_acquire_dev_to_hw(struct cam_context *ctx,
 
 	/* fill in parameters */
 	param.context_data = ctx;
+	param.ctx_id = ctx->ctx_id;
 	param.event_cb = ctx->irq_cb_intf;
 	param.num_acq = cmd->num_resources;
 	param.acquire_info = cmd->resource_hdl;
@@ -568,6 +572,13 @@ int32_t cam_context_acquire_dev_to_hw(struct cam_context *ctx,
 	}
 
 	ctx->ctxt_to_hw_map = param.ctxt_to_hw_map;
+	ctx->hw_mgr_ctx_id = param.hw_mgr_ctx_id;
+
+	snprintf(ctx->ctx_id_string, sizeof(ctx->ctx_id_string),
+		"%s_ctx[%d]_hwmgrctx[%d]_Done",
+		ctx->dev_name,
+		ctx->ctx_id,
+		ctx->hw_mgr_ctx_id);
 
 	/* if hw resource acquire successful, acquire dev handle */
 	req_hdl_param.session_hdl = cmd->session_handle;

@@ -3577,6 +3577,7 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 	acquire_args->ctxt_to_hw_map = ife_ctx;
 	ife_ctx->ctx_in_use = 1;
 	ife_ctx->num_reg_dump_buf = 0;
+	ife_ctx->is_anchor_instance = true;
 
 	cam_ife_hw_mgr_print_acquire_info(ife_ctx, total_pix_port,
 		total_pd_port, total_rdi_port, rc);
@@ -4052,7 +4053,7 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 			(ctx->custom_config & CAM_IFE_CUSTOM_CFG_SW_SYNC_ON)) {
 			rem_jiffies = wait_for_completion_timeout(
 				&ctx->config_done_complete,
-				msecs_to_jiffies(60));
+				msecs_to_jiffies(90));
 			if (rem_jiffies == 0) {
 				CAM_ERR(CAM_ISP,
 					"config done completion timeout for req_id=%llu ctx_index %d",
@@ -4848,6 +4849,7 @@ static int cam_ife_mgr_release_hw(void *hw_mgr_priv,
 	ctx->is_offline = false;
 	ctx->pf_mid_found = false;
 	ctx->last_cdm_done_req = 0;
+	ctx->is_anchor_instance = 1;
 	atomic_set(&ctx->overflow_pending, 0);
 	for (i = 0; i < CAM_IFE_HW_NUM_MAX; i++) {
 		ctx->sof_cnt[i] = 0;
@@ -5609,6 +5611,23 @@ static int cam_isp_blob_tpg_config(
 	}
 
 end:
+	return rc;
+}
+
+static int cam_isp_blob_anchor_config(
+	struct cam_isp_anchor_config        *anchor_config,
+	struct cam_hw_prepare_update_args   *prepare)
+{
+	int                                 rc = 0;
+	struct cam_ife_hw_mgr_ctx          *ctx = NULL;
+
+	ctx = prepare->ctxt_to_hw_map;
+
+	ctx->is_anchor_instance = anchor_config->anchor_instance;
+
+	CAM_INFO(CAM_ISP, "ctx is anchor instance %d",
+		ctx->is_anchor_instance);
+
 	return rc;
 }
 
@@ -6408,6 +6427,25 @@ static int cam_isp_packet_generic_blob_handler(void *user_data,
 				"TPG config failed rc: %d", rc);
 	}
 		break;
+	case CAM_ISP_GENERIC_BLOB_TYPE_ANCHOR_CONFIG: {
+		struct cam_isp_anchor_config *anchor_config;
+
+		if (blob_size < sizeof(struct cam_isp_anchor_config)) {
+			CAM_ERR(CAM_ISP, "Invalid blob size %zu expected %zu",
+				blob_size,
+				sizeof(struct cam_isp_anchor_config));
+			return -EINVAL;
+		}
+
+		anchor_config =
+			(struct cam_isp_anchor_config *)blob_data;
+
+		rc = cam_isp_blob_anchor_config(anchor_config, prepare);
+		if (rc)
+			CAM_ERR(CAM_ISP,
+				"Anchor config failed rc: %d", rc);
+	}
+		break;
 	default:
 		CAM_WARN(CAM_ISP, "Invalid blob type %d", blob_type);
 		break;
@@ -7088,6 +7126,10 @@ static int cam_ife_mgr_cmd(void *hw_mgr_priv, void *cmd_args)
 		case CAM_ISP_HW_MGR_GET_LAST_CDM_DONE:
 			isp_hw_cmd_args->u.last_cdm_done =
 				ctx->last_cdm_done_req;
+			break;
+		case CAM_ISP_HW_MGR_GET_ANCHOR_CONFIG:
+			isp_hw_cmd_args->u.is_anchor_instance =
+				ctx->is_anchor_instance;
 			break;
 		default:
 			CAM_ERR(CAM_ISP, "Invalid HW mgr command:0x%x",
@@ -7836,8 +7878,8 @@ static int cam_ife_hw_mgr_handle_hw_rup(
 		break;
 	}
 
-	CAM_DBG(CAM_ISP, "RUP done for VFE:%d source %d", event_info->hw_idx,
-		event_info->res_id);
+	CAM_DBG(CAM_ISP, "RUP done for VFE:%d source %d ctx_id: %d", event_info->hw_idx,
+		event_info->res_id, ife_hw_mgr_ctx->ctx_index);
 
 	return 0;
 }
@@ -7879,8 +7921,8 @@ static int cam_ife_hw_mgr_handle_hw_epoch(
 		break;
 	}
 
-	CAM_DBG(CAM_ISP, "Epoch for VFE:%d source %d", event_info->hw_idx,
-		event_info->res_id);
+	CAM_DBG(CAM_ISP, "Epoch for VFE:%d source %d ctx_id: %d", event_info->hw_idx,
+		event_info->res_id, ife_hw_mgr_ctx->ctx_index);
 
 	return 0;
 }
@@ -7958,8 +8000,8 @@ static int cam_ife_hw_mgr_handle_hw_sof(
 		break;
 	}
 
-	CAM_DBG(CAM_ISP, "SOF for VFE:%d source %d", event_info->hw_idx,
-		event_info->res_id);
+	CAM_DBG(CAM_ISP, "SOF for VFE:%d source %d ctx_id:%d", event_info->hw_idx,
+		event_info->res_id, ife_hw_mgr_ctx->ctx_index);
 
 	return 0;
 }
@@ -8000,8 +8042,8 @@ static int cam_ife_hw_mgr_handle_hw_eof(
 		break;
 	}
 
-	CAM_DBG(CAM_ISP, "EOF for VFE:%d source %d", event_info->hw_idx,
-		event_info->res_id);
+	CAM_DBG(CAM_ISP, "EOF for VFE:%d source %d ctx_id: %d", event_info->hw_idx,
+		event_info->res_id, ife_hw_mgr_ctx->ctx_index);
 
 	return 0;
 }
@@ -8034,8 +8076,9 @@ static int cam_ife_hw_mgr_handle_hw_buf_done(
 	}
 
 	CAM_DBG(CAM_ISP,
-		"Buf done for VFE:%d res_id: 0x%x last consumed addr: 0x%x",
-		event_info->hw_idx, event_info->res_id, event_info->reg_val);
+		"Buf done for VFE:%d res_id: 0x%x last consumed addr: 0x%x ctx_id: %d",
+		event_info->hw_idx, event_info->res_id, event_info->reg_val,
+		ife_hw_mgr_ctx->ctx_index);
 
 	return 0;
 }
@@ -8046,15 +8089,18 @@ static int cam_ife_hw_mgr_event_handler(
 	void                                *evt_info)
 {
 	int                                  rc = 0;
+	struct cam_ife_hw_mgr_ctx           *ife_hw_mgr_ctx = priv;
 
 	if (!evt_info)
 		return -EINVAL;
 
-	if (!priv)
+	if (!priv) {
 		if (evt_id != CAM_ISP_HW_EVENT_ERROR)
 			return -EINVAL;
-
-	CAM_DBG(CAM_ISP, "Event ID 0x%x", evt_id);
+	} else {
+		CAM_DBG(CAM_ISP, "Event ID 0x%x ctx_id: %d", evt_id,
+				ife_hw_mgr_ctx->ctx_index);
+	}
 
 	switch (evt_id) {
 	case CAM_ISP_HW_EVENT_SOF:

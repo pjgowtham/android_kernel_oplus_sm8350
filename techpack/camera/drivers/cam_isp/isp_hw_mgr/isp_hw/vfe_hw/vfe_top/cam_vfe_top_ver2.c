@@ -405,13 +405,17 @@ static int cam_vfe_hw_dump(
 		return -ENOSPC;
 	}
 	dump_data = top_priv->common_data.dump_data;
+	soc_info = top_priv->common_data.soc_info;
 
-	if (!dump_data) {
-		CAM_ERR(CAM_ISP, "Dump data not available");
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	if(!dump_data || !soc_info){
+		CAM_ERR(CAM_ISP,
+			"Invalid params dump_data %pK soc_info %pK",
+			(void *)dump_data,
+			(void *)soc_info);
 		return -EINVAL;
 	}
-
-	soc_info = top_priv->common_data.soc_info;
+#endif
 
 	/*Dump registers */
 	for (i = 0; i < dump_data->num_reg_dump_entries; i++)

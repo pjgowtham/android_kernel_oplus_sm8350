@@ -319,10 +319,9 @@ static int cam_tfe_hw_mgr_get_clock_rate(
 			continue;
 
 		hw_intf = isp_hw_res->hw_res[i]->hw_intf;
+		CAM_DBG(CAM_ISP, "hw type %d hw index:%d",
+			hw_intf->hw_type, hw_intf->hw_idx);
 		if (hw_intf && hw_intf->hw_ops.process_cmd) {
-			CAM_DBG(CAM_ISP, "hw type %d hw index:%d",
-				hw_intf->hw_type, hw_intf->hw_idx);
-
 			rc = hw_intf->hw_ops.process_cmd(
 				hw_intf->hw_priv,
 				CAM_ISP_HW_CMD_GET_CLOCK_RATE,
@@ -344,7 +343,7 @@ static int cam_tfe_hw_mgr_update_clock_rate(
 	uint32_t                    *updated_clock_rate)
 {
 	int i;
-	int rc = -EINVAL;
+	int rc = 0;
 	struct cam_hw_intf      *hw_intf;
 
 	for (i = 0; i < CAM_ISP_HW_SPLIT_MAX; i++) {
@@ -352,33 +351,29 @@ static int cam_tfe_hw_mgr_update_clock_rate(
 			continue;
 
 		hw_intf = isp_hw_res->hw_res[i]->hw_intf;
+		CAM_DBG(CAM_ISP, "hw type %d hw index:%d",
+			hw_intf->hw_type, hw_intf->hw_idx);
 
 		if (hw_intf && hw_intf->hw_ops.process_cmd) {
-			CAM_DBG(CAM_ISP, "hw type %d hw index:%d",
-				hw_intf->hw_type, hw_intf->hw_idx);
-
 			rc = hw_intf->hw_ops.process_cmd(
 				hw_intf->hw_priv,
 				CAM_ISP_HW_CMD_DYNAMIC_CLOCK_UPDATE,
 				set_clock_rate,
 				sizeof(uint32_t));
 			if (rc) {
-				CAM_ERR(CAM_ISP, "Failed to set Clock rate");
+				CAM_ERR(CAM_ISP, "Failed to get Clock rate");
 				return rc;
 			}
 		}
 
 		if (hw_intf && hw_intf->hw_ops.process_cmd) {
-			CAM_DBG(CAM_ISP, "hw type %d hw index:%d",
-				hw_intf->hw_type, hw_intf->hw_idx);
-
 			rc = hw_intf->hw_ops.process_cmd(
 				hw_intf->hw_priv,
 				CAM_ISP_HW_CMD_GET_CLOCK_RATE,
 				updated_clock_rate,
 				sizeof(uint32_t));
 			if (rc) {
-				CAM_ERR(CAM_ISP, "Failed to get updated clock rate");
+				CAM_ERR(CAM_ISP, "Failed to get Clock rate");
 				return rc;
 			}
 		}
@@ -1970,12 +1965,6 @@ int cam_tfe_cshiphy_callback(
 		&ctx->res_list_tfe_csid, list) {
 			rc = cam_tfe_hw_mgr_update_clock_rate(hw_mgr_res,
 				phy_clock_rate, &updated_csid_clk);
-			if (rc) {
-				CAM_ERR(CAM_ISP,
-					"csid clock update failed: %d, csid:%lld tfe:%lld",
-					rc, csid_clock_rate, tfe_clock_rate);
-				goto end;
-			}
 		}
 
 		if (updated_csid_clk > tfe_clock_rate) {
@@ -1983,15 +1972,9 @@ int cam_tfe_cshiphy_callback(
 			&ctx->res_list_tfe_in, list) {
 				rc = cam_tfe_hw_mgr_update_clock_rate(hw_mgr_res,
 					&updated_csid_clk, &updated_tfe_clk);
-				if (rc) {
-					CAM_ERR(CAM_ISP,
-						"tfe clock update failed: %d, csid:%lld tfe:%lld",
-						rc, updated_csid_clk, tfe_clock_rate);
-					goto end;
-				}
 			}
 		}
-		goto skip_tfe_update;
+		goto end;
 	}
 
 	if (csid_clock_rate > tfe_clock_rate) {
@@ -1999,16 +1982,9 @@ int cam_tfe_cshiphy_callback(
 		&ctx->res_list_tfe_in, list) {
 			rc = cam_tfe_hw_mgr_update_clock_rate(hw_mgr_res,
 				&csid_clock_rate, &updated_tfe_clk);
-			if (rc) {
-				CAM_ERR(CAM_ISP,
-					"tfe clock update failed: %d, csid:%lld tfe:%lld",
-					rc, csid_clock_rate, tfe_clock_rate);
-				goto end;
-			}
 		}
 	}
 
-skip_tfe_update:
 	if (!updated_csid_clk)
 		updated_csid_clk = csid_clock_rate;
 
@@ -3251,17 +3227,6 @@ static int cam_tfe_mgr_start_hw(void *hw_mgr_priv, void *start_hw_args)
 
 	if (ctx->init_done && start_isp->start_only)
 		goto start_only;
-
-	/* set tpg debug information for top tpg */
-	for (i = 0; i < CAM_TOP_TPG_HW_NUM_MAX; i++) {
-		if (g_tfe_hw_mgr.tpg_devices[i]) {
-			rc = g_tfe_hw_mgr.tpg_devices[i]->hw_ops.process_cmd(
-				g_tfe_hw_mgr.tpg_devices[i]->hw_priv,
-				CAM_ISP_HW_CMD_TPG_SET_PATTERN,
-				&g_tfe_hw_mgr.debug_cfg.set_tpg_pattern,
-				sizeof(g_tfe_hw_mgr.debug_cfg.set_tpg_pattern));
-		}
-	}
 
 	list_for_each_entry(hw_mgr_res, &ctx->res_list_tfe_csid, list) {
 		for (i = 0; i < CAM_ISP_HW_SPLIT_MAX; i++) {
@@ -5824,10 +5789,9 @@ static int cam_tfe_hw_mgr_debug_register(void)
 	int rc = 0;
 	struct dentry *dbgfileptr = NULL;
 
-	g_tfe_hw_mgr.debug_cfg.set_tpg_pattern = CAM_TOP_TPG_DEFAULT_PATTERN;
 	dbgfileptr = debugfs_create_dir("camera_tfe", NULL);
 	if (!dbgfileptr) {
-		CAM_ERR(CAM_ISP, "DebugFS could not create directory!");
+		CAM_ERR(CAM_ISP,"DebugFS could not create directory!");
 		rc = -ENOENT;
 		goto end;
 	}
@@ -5845,9 +5809,6 @@ static int cam_tfe_hw_mgr_debug_register(void)
 	dbgfileptr = debugfs_create_u32("enable_csid_recovery", 0644,
 		g_tfe_hw_mgr.debug_cfg.dentry,
 		&g_tfe_hw_mgr.debug_cfg.enable_csid_recovery);
-	dbgfileptr = debugfs_create_u32("set_tpg_pattern", 0644,
-		g_tfe_hw_mgr.debug_cfg.dentry,
-		&g_tfe_hw_mgr.debug_cfg.set_tpg_pattern);
 	dbgfileptr = debugfs_create_file("tfe_camif_debug", 0644,
 		g_tfe_hw_mgr.debug_cfg.dentry, NULL, &cam_tfe_camif_debug);
 	dbgfileptr = debugfs_create_u32("per_req_reg_dump", 0644,
