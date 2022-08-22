@@ -32,7 +32,7 @@
 #include <linux/sysrq.h>
 #endif
 
-#ifdef CONFIG_DRM_MSM
+#ifdef CONFIG_QCOM_KGSL
 #include <linux/msm_drm_notify.h>
 #endif
 
@@ -65,7 +65,7 @@
 #include <linux/sysrq.h>
 #endif
 
-#ifdef CONFIG_DRM_MSM
+#ifdef CONFIG_QCOM_KGSL
 #include <linux/msm_drm_notify.h>
 #endif
 

@@ -17,7 +17,7 @@
 struct bright_data g_bright_data = {
     .is_panic = 0,
     .status = BRIGHT_STATUS_INIT,
-#ifdef CONFIG_DRM_MSM
+#ifdef CONFIG_QCOM_KGSL
     .blank = MSM_DRM_BLANK_UNBLANK,
 #else
     .blank = FB_BLANK_UNBLANK,
@@ -53,7 +53,7 @@ int bright_screen_timer_restart(void)
         return g_bright_data.status;
     }
 
-#ifdef CONFIG_DRM_MSM
+#ifdef CONFIG_QCOM_KGSL
     if(g_bright_data.blank == MSM_DRM_BLANK_UNBLANK)    //MSM_DRM_BLANK_POWERDOWN
 #else
     if(g_bright_data.blank == FB_BLANK_UNBLANK)        //FB_BLANK_POWERDOWN
@@ -106,7 +106,7 @@ static int bright_write_error_count(struct bright_data *bri_data)
 
 static int get_status(void)
 {
-#ifdef CONFIG_DRM_MSM
+#ifdef CONFIG_QCOM_KGSL
     if(MSM_BOOT_MODE__NORMAL == get_boot_mode())
     {
         return g_bright_data.status;
@@ -289,7 +289,7 @@ static void bright_timer_func(struct timer_list *t)
     }
 }
 
-#ifdef CONFIG_DRM_MSM
+#ifdef CONFIG_QCOM_KGSL
 static int bright_fb_notifier_callback(struct notifier_block *self,
                  unsigned long event, void *data)
 {
@@ -366,7 +366,7 @@ static int bright_fb_notifier_callback(struct notifier_block *self,
     }
     return 0;
 }
-#endif /* CONFIG_DRM_MSM */
+#endif /* CONFIG_QCOM_KGSL */
 
 static ssize_t bright_screen_cancel_proc_write(struct file *file, const char __user *buf,
         size_t count,loff_t *off)
@@ -410,7 +410,7 @@ int bright_screen_check_init(void)
 
     sprintf(g_bright_data.error_id, "%s", "null");
     g_bright_data.fb_notif.notifier_call = bright_fb_notifier_callback;
-#ifdef CONFIG_DRM_MSM
+#ifdef CONFIG_QCOM_KGSL
     msm_drm_register_client(&g_bright_data.fb_notif);
 #else
     fb_register_client(&g_bright_data.fb_notif);
