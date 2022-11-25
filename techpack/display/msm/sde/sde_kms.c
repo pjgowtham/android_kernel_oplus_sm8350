@@ -72,6 +72,8 @@
 #include "oplus_adfr.h"
 #endif
 
+#include <soc/oppo/boot_mode.h>
+
 /* defines for secure channel call */
 #define MEM_PROTECT_SD_CTRL_SWITCH 0x18
 #define MDP_DEVICE_ID            0x1A
@@ -1601,7 +1603,7 @@ static void sde_kms_wait_for_commit_done(struct msm_kms *kms,
 		 */
 		SDE_EVT32_VERBOSE(DRMID(crtc));
 		ret = sde_encoder_wait_for_event(encoder, MSM_ENC_COMMIT_DONE);
-		if (ret && ret != -EWOULDBLOCK) {
+		if ((MSM_BOOT_MODE__RECOVERY != get_boot_mode()) && (ret && ret != -EWOULDBLOCK)) {
 			SDE_ERROR("wait for commit done returned %d\n", ret);
 			sde_crtc_request_frame_reset(crtc, encoder);
 			break;
