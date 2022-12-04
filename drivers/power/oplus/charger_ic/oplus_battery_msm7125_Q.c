@@ -5403,6 +5403,7 @@ unsuspend_input:
 		reset_storm_count(wdata);
 	}
 #ifdef OPLUS_FEATURE_CHG_BASIC
+/*lizhijie@CHG.Basic 2020/02/25 add for QC up 9V issue*/
 	if (g_oplus_chip && g_oplus_chip->vbatt_num == 1) {
 		if (!chg->irq_info[SWITCHER_POWER_OK_IRQ].irq_data)
 			return IRQ_HANDLED;
@@ -5466,6 +5467,7 @@ unsuspend_input:
 		smblib_rerun_apsd(chg);
 	}
 #ifdef OPLUS_FEATURE_CHG_BASIC
+/*lizhijie@CHG.Basic 2020/02/25 add for QC up 9V issue*/
 	if (g_oplus_chip && g_oplus_chip->vbatt_num == 2) {
 		if (!chg->irq_info[SWITCHER_POWER_OK_IRQ].irq_data)
 			return IRQ_HANDLED;
@@ -11640,7 +11642,6 @@ static int smb5_batt_prop_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMITED:
 	case POWER_SUPPLY_PROP_STEP_CHARGING_ENABLED:
 	case POWER_SUPPLY_PROP_DIE_HEALTH:
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	case POWER_SUPPLY_PROP_SOC_NOTIFY_READY:
 	case POWER_SUPPLY_PROP_RESTORE_SOC:
 	case POWER_SUPPLY_PROP_BATTERY_INFO:
@@ -14514,7 +14515,7 @@ int oplus_chg_set_qc_config()
 	return ret;
 }
 
-bool oplus_sm8150_get_pd_type(void)
+int oplus_sm8150_get_pd_type(void)
 {
 	struct smb_charger *chg = NULL;
 

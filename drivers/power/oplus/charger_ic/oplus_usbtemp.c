@@ -114,14 +114,23 @@ int oplus_usbtemp_dischg_action(struct oplus_chg_chip *chip)
 		}
 
 		usleep_range(10000,10000);///msleep(10);
+		if (is_vooc_support_single_batt_svooc() == true) {
+			vooc_enable_cp_ovp(0);
+		}
 		chip->chg_ops->charger_suspend();
 		usleep_range(10000,10000);
-		pr_err("[oplus_usbtemp_dischg_action]:run_action");
-		if(chip->chg_ops->set_typec_sinkonly != NULL){
-			chip->chg_ops->set_typec_sinkonly();
+		if (chip->chg_ops->set_typec_cc_open != NULL) {
+			chip->chg_ops->set_typec_cc_open();
 		} else {
-			pr_err("[oplus_usbtemp_dischg_action]: set_typec_sinkonly is null");
+			pr_err("[oplus_usbtemp_dischg_action]: set_typec_cc_open is null");
+			if(chip->chg_ops->set_typec_sinkonly != NULL){
+				chip->chg_ops->set_typec_sinkonly();
+			} else {
+				pr_err("[oplus_usbtemp_dischg_action]: set_typec_sinkonly is null");
+			}
 		}
+		usleep_range(20000,20000);
+		pr_err("[oplus_usbtemp_dischg_action]:run_action");
 	}
 
 #ifndef CONFIG_OPLUS_CHARGER_MTK
@@ -375,8 +384,8 @@ int oplus_usbtemp_monitor_common(void *data)
 		}
 
 		//condition2  :the temp uprising to fast
-		if (((chip->usb_temp_l - chip->tbatt_temp/10) > chip->usbtemp_batttemp_gap && chip->usb_temp_l < USB_100C)
-				|| ((chip->usb_temp_r - chip->tbatt_temp/10) > chip->usbtemp_batttemp_gap && chip->usb_temp_r < USB_100C)) {
+		if (((chip->usb_temp_l - chip->tbatt_temp/10) >= chip->usbtemp_batttemp_gap && chip->usb_temp_l < USB_100C)
+				|| ((chip->usb_temp_r - chip->tbatt_temp/10) >= chip->usbtemp_batttemp_gap && chip->usb_temp_r < USB_100C)) {
 			if (count == 0) {
 				last_usb_temp_r = chip->usb_temp_r;
 				last_usb_temp_l = chip->usb_temp_l;

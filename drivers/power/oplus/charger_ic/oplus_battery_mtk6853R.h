@@ -1,16 +1,8 @@
-/************************************************************************************
-** OPLUS_FEATURE_CHG_BASIC
-** Copyright (C), 2018-2019, OPLUS Mobile Comm Corp., Ltd
-**
-** Description:
-**    For P80 charger ic driver
-**
-** Version: 1.0
-** Date created: 2018-11-09
-**
-** --------------------------- Revision History: ------------------------------------
-* <version>       <date>         <author>              			<desc>
-*************************************************************************************/
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
+ */
+
 #ifndef __OPLUS_BATTERY_MTK6853_H__
 #define __OPLUS_BATTERY_MTK6853_H__
 
@@ -79,5 +71,11 @@ void mt6360_enable_hvdcp_detect(void);
 extern void oplus_notify_hvdcp_detect_stat(void);
 void oplus_gauge_set_event(int event);
 extern bool is_mtksvooc_project;
+extern bool is_mtkvooc30_project;
+int oplus_get_usb_status(void);
+int oplus_get_typec_cc_orientation(void);
+int oplus_get_otg_online_status(void);
+bool oplus_get_otg_online_status_default(void);
+void oplus_set_otg_switch_status(bool value);
 #endif /* OPLUS_FEATURE_CHG_BASIC */
 #endif /* __OPLUS_BATTERY_MTK6885_H__ */

@@ -6,7 +6,7 @@
 #ifndef __OPLUS_BQ27541_H__
 #define __OPLUS_BQ27541_H__
 
-
+#include "../oplus_gauge.h"
 #define OPLUS_USE_FAST_CHARGER
 #define DRIVER_VERSION			"1.1.0"
 
@@ -37,7 +37,7 @@
 #define BQ27541_REG_TTECP		0x26
 #define BQ27541_REG_INTTEMP		0x28
 #define BQ27541_REG_CC			0x2a
-#define BQ27541_REG_SOH			0x28
+#define BQ27541_REG_SOH			0x2E
 #define BQ27541_REG_SOC			0x2c
 #define BQ27541_REG_NIC			0x2e
 #define BQ27541_REG_ICR			0x30
@@ -162,11 +162,13 @@
 #define DEVICE_TYPE_BQ27411			0x0421
 #define DEVICE_TYPE_BQ28Z610		0xFFA5
 #define DEVICE_TYPE_ZY0602			0x0602
+#define DEVICE_TYPE_ZY0603			0xA5FF
 
 #define DEVICE_BQ27541				0
 #define DEVICE_BQ27411				1
 #define DEVICE_BQ28Z610				2
 #define DEVICE_ZY0602				3
+#define DEVICE_ZY0603				4
 
 #define DEVICE_TYPE_FOR_VOOC_BQ27541		0
 #define DEVICE_TYPE_FOR_VOOC_BQ27411		1
@@ -392,6 +394,8 @@ struct chip_bq27541 {
 	int batt_cell_min_vol;
 	int max_vol_pre;
 	int min_vol_pre;
+	int pre_balancing_config;
+	int pre_balancing_count;
 	/*struct  delayed_work		hw_config;*/
 
 	int opchg_swtich1_gpio;
@@ -418,12 +422,19 @@ struct chip_bq27541 {
 	bool battery_full_param;//only for wite battery full param in guage dirver probe on 7250 platform
 	int sha1_key_index;
 	bool batt_bq28z610;
+	bool batt_zy0603;
 	bool bq28z610_need_balancing;
 	int bq28z610_device_chem;
+	int gauge_num;
+	struct mutex chip_mutex;
 	struct bq27541_authenticate_data *authenticate_data;
 	struct file_operations *authenticate_ops;
+	struct oplus_gauge_chip	*oplus_gauge;
 };
 
 extern bool oplus_gauge_ic_chip_is_null(void);
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+int bq27541_driver_init(void);
+void bq27541_driver_exit(void);
+#endif
 #endif  /* __OPLUS_BQ27541_H__ */

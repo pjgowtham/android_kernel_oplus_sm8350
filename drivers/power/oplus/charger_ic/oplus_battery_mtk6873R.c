@@ -1,16 +1,8 @@
-/************************************************************************************
-** OPLUS_FEATURE_CHG_BASIC
-** Copyright (C), 2018-2019, OPLUS Mobile Comm Corp., Ltd
-**
-** Description:
-**    For P80 charger ic driver
-**
-** Version: 1.0
-** Date created: 2018-11-09
-**
-** --------------------------- Revision History: ------------------------------------
-* <version>       <date>         <author>              			<desc>
-*************************************************************************************/
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (C) 2018-2020 Oplus. All rights reserved.
+ */
+
 #include <linux/init.h>		/* For init/exit macros */
 #include <linux/module.h>	/* For MODULE_ marcros  */
 #include <linux/fs.h>
@@ -63,11 +55,13 @@
 #include "../oplus_vooc.h"
 #include "../oplus_adapter.h"
 #include "../oplus_short.h"
+#include "../oplus_configfs.h"
 #include "../gauge_ic/oplus_bq27541.h"
 #include "op_charge.h"
 #include "../../../misc/mediatek/typec/tcpc/inc/tcpci.h"
 #include "../../../misc/mediatek/pmic/mt6360/inc/mt6360_pmu.h"
 #include "oplus_bq25601d.h"
+#include "../oplus_pps.h"
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
 #include <linux/iio/consumer.h>
@@ -100,12 +94,12 @@ void oplus_wake_up_usbtemp_thread(void);
 
 //====================================================================//
 #ifdef OPLUS_FEATURE_CHG_BASIC
-#define USB_TEMP_HIGH		0x01//bit0
-#define USB_WATER_DETECT	0x02//bit1
-#define USB_RESERVE2		0x04//bit2
-#define USB_RESERVE3		0x08//bit3
-#define USB_RESERVE4		0x10//bit4
-#define USB_DONOT_USE		0x80000000//bit31
+#define USB_TEMP_HIGH		0x01/*bit0*/
+#define USB_WATER_DETECT	0x02/*bit1*/
+#define USB_RESERVE2		0x04/*bit2*/
+#define USB_RESERVE3		0x08/*bit3*/
+#define USB_RESERVE4		0x10/*bit4*/
+#define USB_DONOT_USE		0x80000000/*bit31*/
 static int usb_status = 0;
 
 static void oplus_set_usb_status(int status)
@@ -118,7 +112,7 @@ static void oplus_clear_usb_status(int status)
 	usb_status = usb_status & (~status);
 }
 
-static int oplus_get_usb_status(void)
+int oplus_get_usb_status(void)
 {
 	return usb_status;
 }
@@ -1405,7 +1399,7 @@ static int oplus_mt6360_input_current_limit_write(int value)
 	if (chg_vol > 7600) {
 		aicl_point = 7600;
 	} else {
-		if (g_oplus_chip->batt_volt > 4100 )
+		if (g_oplus_chip->batt_volt > 4100)
 			aicl_point = 4550;
 		else
 			aicl_point = 4500;
@@ -1890,7 +1884,6 @@ static void oplus_mt_power_off(void)
 			if (!(tcpc_dev->pd_wait_hard_reset_complete)
 					&& !oplus_mt6360_get_vbus_status()) {
 				kernel_power_off();
-				//mt_power_off();
 			}
 		}
 	} else {
@@ -1971,7 +1964,7 @@ close_time:
 //====================================================================//
 
 #ifdef CONFIG_OPLUS_CHARGER_MTK6873
-static int oplus_chg_get_main_ibat(void)
+int oplus_chg_get_main_ibat(void)
 {
 	int ibat = 0;
 	int ret = 0;
@@ -2543,8 +2536,6 @@ static void oplus_get_usbtemp_volt(struct oplus_chg_chip *chip)
 	}
 	chip->usbtemp_volt_r = usbtemp_volt * 1500 / 4096;
 
-       //chg_err("usbtemp_volt: %d, %d\n", chip->usbtemp_volt_r, chip->usbtemp_volt_l);
-
 	return;
 }
 
@@ -2572,8 +2563,6 @@ static void get_usb_temp(struct oplus_chg_chip *chip)
 			break;
 	}
 	chip->usb_temp_l = con_temp_19165[i];
-
-	//chg_err("usbtemp: %d, %d\n", chip->usb_temp_r, chip->usb_temp_l);
 
 	return;
 }
@@ -2734,9 +2723,7 @@ static int oplus_usbtemp_monitor_main(void *data)
 								oplus_chg_set_chargerid_switch_val(0);
 								oplus_vooc_switch_mode(NORMAL_CHARGER_MODE);
 								oplus_vooc_reset_mcu();
-								//msleep(20);//wait for turn-off fastchg MOS
 							}
-							//chip->chg_ops->charging_disable();
 							usleep_range(10000, 11000);
 							bq25601d_suspend_charger();
 							chip->chg_ops->charger_suspend();
@@ -2764,7 +2751,7 @@ check_again:
 			last_usb_temp_l = chip->usb_temp_l;
 			msleep(delay);
 			wait_event_interruptible(oplus_usbtemp_wq,
-				oplus_chg_get_vbus_status(chip) == true /*|| oplus_chg_get_otg_online() == true*/ );
+				oplus_chg_get_vbus_status(chip) == true);
 		}
 	}
 
@@ -2876,141 +2863,22 @@ static int mt_ac_get_property(struct power_supply *psy,
 	return rc;
 }
 
-static int mt_usb_prop_is_writeable(struct power_supply *psy,
-	enum power_supply_property psp)
-{
-	int rc = 0;
-
-	switch (psp) {
-		case POWER_SUPPLY_PROP_WATER_DETECT_FEATURE:
-			rc = 1;
-			break;
-		default:
-			rc = oplus_usb_property_is_writeable(psy, psp);
-	}
-	return rc;
-}
-
 static int mt_usb_get_property(struct power_supply *psy,
 	enum power_supply_property psp, union power_supply_propval *val)
 {
-	int rc = 0;
-
-	switch (psp) {
-		case POWER_SUPPLY_PROP_TYPEC_CC_ORIENTATION:
-			if (pinfo != NULL && pinfo->tcpc != NULL) {
-				if (tcpm_inquire_typec_attach_state(pinfo->tcpc) != TYPEC_UNATTACHED) {
-					val->intval = (int)tcpm_inquire_cc_polarity(pinfo->tcpc) + 1;
-				} else {
-					val->intval = 0;
-				}
-			} else {
-				val->intval = 0;
-			}
-			break;
-		case POWER_SUPPLY_PROP_TYPEC_SBU_VOLTAGE:
-			val->intval = oplus_get_typec_sbu_voltage();
-			break;
-		case POWER_SUPPLY_PROP_WATER_DETECT_FEATURE:
-			val->intval = oplus_get_water_detect();
-			break;
-		case POWER_SUPPLY_PROP_USB_STATUS:
-			val->intval = oplus_get_usb_status();
-			break;
-		case POWER_SUPPLY_PROP_USBTEMP_VOLT_L:
-			if (g_oplus_chip)
-				val->intval = g_oplus_chip->usbtemp_volt_l;
-			else
-				val->intval = -ENODATA;
-			break;
-		case POWER_SUPPLY_PROP_USBTEMP_VOLT_R:
-			if (g_oplus_chip)
-				val->intval = g_oplus_chip->usbtemp_volt_r;
-			else
-				val->intval = -ENODATA;
-			break;
-		case POWER_SUPPLY_PROP_FAST_CHG_TYPE:
-			if(((oplus_vooc_get_fastchg_started() == true) ||
-				(oplus_vooc_get_fastchg_dummy_started() == true)) &&
-				(g_oplus_chip->vbatt_num == 1) &&
-				(oplus_vooc_get_fast_chg_type() == FASTCHG_CHARGER_TYPE_UNKOWN)){
-				val->intval = CHARGER_SUBTYPE_FASTCHG_VOOC;
-			} else {
-				val->intval = oplus_vooc_get_fast_chg_type();
-				if (val->intval == 0 && g_oplus_chip && g_oplus_chip->chg_ops->get_charger_subtype) {
-					val->intval = g_oplus_chip->chg_ops->get_charger_subtype();
-				}
-			}
-			break;
-
-		default:
-			rc = oplus_usb_get_property(psy, psp, val);
-	}
-	return rc;
-}
-
-static int mt_usb_set_property(struct power_supply *psy,
-	enum power_supply_property psp, const union power_supply_propval *val)
-{
-	int rc = 0;
-
-	switch (psp) {
-		case POWER_SUPPLY_PROP_WATER_DETECT_FEATURE:
-			printk(KERN_ERR "[OPLUS_CHG][%s]: oplus_set_water_detect[%d]\n", __func__, val->intval);
-			if (val->intval == 0) {
-				oplus_set_water_detect(false);
-			} else {
-				oplus_set_water_detect(true);
-			}
-			break;
-		default:
-			rc = oplus_usb_set_property(psy, psp, val);
-	}
-	return rc;
+	return oplus_usb_get_property(psy, psp, val);
 }
 
 static int battery_prop_is_writeable(struct power_supply *psy,
 	enum power_supply_property psp)
 {
-	int rc = 0;
-
-#ifdef CONFIG_OPLUS_CHARGER_MTK6873
-	switch (psp) {
-	case POWER_SUPPLY_PROP_EM_MODE:
-		rc = 1;
-		break;
-	default :
-		rc = oplus_battery_property_is_writeable(psy, psp);
-		break;
-	}
-#else
-	rc = oplus_battery_property_is_writeable(psy, psp);
-#endif
-
-	return rc;
+	return oplus_battery_property_is_writeable(psy, psp);
 }
 
 static int battery_set_property(struct power_supply *psy,
 	enum power_supply_property psp, const union power_supply_propval *val)
 {
-	int rc = 0;
-
-#ifdef CONFIG_OPLUS_CHARGER_MTK6873
-	switch (psp) {
-	case POWER_SUPPLY_PROP_EM_MODE:
-		if (val->intval > 0)
-			em_mode = true;
-		else
-			em_mode = false;
-		break;
-	default:
-		rc = oplus_battery_set_property(psy, psp, val);
-		break;
-	}
-#else
-	rc = oplus_battery_set_property(psy, psp, val);
-#endif
-	return rc;
+	return oplus_battery_set_property(psy, psp, val);
 }
 
 static int battery_get_property(struct power_supply *psy,
@@ -3018,30 +2886,26 @@ static int battery_get_property(struct power_supply *psy,
 {
 	int rc = 0;
 
-#ifdef CONFIG_OPLUS_CHARGER_MTK6873
-	if (!g_oplus_chip) {
-                pr_err("%s, oplus_chip null\n", __func__);
-                return -1;
-        }
-
-	switch (psp) {
-	case POWER_SUPPLY_PROP_EM_MODE:
-		val->intval = em_mode;
-		break;
-	case POWER_SUPPLY_PROP_SUB_CURRENT:
-		if (g_oplus_chip->charger_exist) {
-			val->intval = g_oplus_chip->icharging + oplus_chg_get_main_ibat();
-		} else {
+		switch (psp) {
+		case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
+			val->intval = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+			if (g_oplus_chip && (g_oplus_chip->ui_soc == 0)) {
+				val->intval = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+					chg_err("bat pro POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL, should shutdown!!!\n");
+				}
+			break;
+		case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
+			if (g_oplus_chip) {
+				val->intval = g_oplus_chip->batt_fcc * 1000;
+			}
+			break;
+		case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
 			val->intval = 0;
+			break;
+		default:
+			rc = oplus_battery_get_property(psy, psp, val);
+			break;
 		}
-		break;
-	default:
-		rc = oplus_battery_get_property(psy, psp, val);
-		break;
-	}
-#else
-	rc = oplus_battery_get_property(psy, psp, val);
-#endif
 
 	return 0;
 }
@@ -3054,15 +2918,6 @@ static enum power_supply_property mt_usb_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_CURRENT_MAX,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX,
-	POWER_SUPPLY_PROP_OTG_SWITCH,
-	POWER_SUPPLY_PROP_OTG_ONLINE,
-	POWER_SUPPLY_PROP_TYPEC_CC_ORIENTATION,
-	POWER_SUPPLY_PROP_TYPEC_SBU_VOLTAGE,
-	POWER_SUPPLY_PROP_WATER_DETECT_FEATURE,
-	POWER_SUPPLY_PROP_USB_STATUS,
-	POWER_SUPPLY_PROP_USBTEMP_VOLT_L,
-	POWER_SUPPLY_PROP_USBTEMP_VOLT_R,
-	POWER_SUPPLY_PROP_FAST_CHG_TYPE,
 };
 
 static enum power_supply_property battery_properties[] = {
@@ -3076,67 +2931,12 @@ static enum power_supply_property battery_properties[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_MIN,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CHARGE_NOW,
-	POWER_SUPPLY_PROP_AUTHENTICATE,
-	POWER_SUPPLY_PROP_CHARGE_TIMEOUT,
-	POWER_SUPPLY_PROP_CHARGE_TECHNOLOGY,
-	POWER_SUPPLY_PROP_FAST_CHARGE,
-	POWER_SUPPLY_PROP_MMI_CHARGING_ENABLE,        /*add for MMI_CHG_TEST*/
-#ifdef CONFIG_OPLUS_CHARGER_MTK
-	POWER_SUPPLY_PROP_STOP_CHARGING_ENABLE,
-	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
 	POWER_SUPPLY_PROP_CURRENT_MAX,
-#endif
-	POWER_SUPPLY_PROP_BATTERY_FCC,
-	POWER_SUPPLY_PROP_BATTERY_SOH,
-	POWER_SUPPLY_PROP_BATTERY_CC,
-	POWER_SUPPLY_PROP_BATTERY_RM,
-	POWER_SUPPLY_PROP_BATTERY_NOTIFY_CODE,
-#ifdef CONFIG_OPLUS_SMART_CHARGER_SUPPORT
-	POWER_SUPPLY_PROP_COOL_DOWN,
-#endif
-	POWER_SUPPLY_PROP_ADAPTER_FW_UPDATE,
-	POWER_SUPPLY_PROP_VOOCCHG_ING,
-#ifdef CONFIG_OPLUS_CHECK_CHARGERID_VOLT
-	POWER_SUPPLY_PROP_CHARGERID_VOLT,
-#endif
-#ifdef CONFIG_OPLUS_SHIP_MODE_SUPPORT
-	POWER_SUPPLY_PROP_SHIP_MODE,
-#endif
-#ifdef CONFIG_OPLUS_CALL_MODE_SUPPORT
-	POWER_SUPPLY_PROP_CALL_MODE,
-#endif
-#ifdef CONFIG_OPLUS_SHORT_C_BATT_CHECK
-#ifdef CONFIG_OPLUS_SHORT_USERSPACE
-	POWER_SUPPLY_PROP_SHORT_C_LIMIT_CHG,
-	POWER_SUPPLY_PROP_SHORT_C_LIMIT_RECHG,
-	POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT,
-	POWER_SUPPLY_PROP_INPUT_CURRENT_SETTLED,
-#else
-	POWER_SUPPLY_PROP_SHORT_C_BATT_UPDATE_CHANGE,
-	POWER_SUPPLY_PROP_SHORT_C_BATT_IN_IDLE,
-	POWER_SUPPLY_PROP_SHORT_C_BATT_CV_STATUS,
-#endif /*CONFIG_OPLUS_SHORT_USERSPACE*/
-#endif
-#ifdef CONFIG_OPLUS_SHORT_HW_CHECK
-	POWER_SUPPLY_PROP_SHORT_C_HW_FEATURE,
-	POWER_SUPPLY_PROP_SHORT_C_HW_STATUS,
-#endif
-#ifdef CONFIG_OPLUS_SHORT_IC_CHECK
-	POWER_SUPPLY_PROP_SHORT_C_IC_OTP_STATUS,
-	POWER_SUPPLY_PROP_SHORT_C_IC_VOLT_THRESH,
-	POWER_SUPPLY_PROP_SHORT_C_IC_OTP_VALUE,
-#endif
-#ifdef CONFIG_OPLUS_CHIP_SOC_NODE
-	POWER_SUPPLY_PROP_CHIP_SOC,
-	POWER_SUPPLY_PROP_SMOOTH_SOC,
-#endif
-#ifdef CONFIG_OPLUS_CHARGER_MTK6873
-	POWER_SUPPLY_PROP_EM_MODE,
-	POWER_SUPPLY_PROP_SUB_CURRENT,
-#endif
+	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
+	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 };
 
 static int oplus_power_supply_init(struct oplus_chg_chip *chip)
@@ -3162,8 +2962,6 @@ static int oplus_power_supply_init(struct oplus_chg_chip *chip)
 	mt_chg->usb_psd.properties = mt_usb_properties;
 	mt_chg->usb_psd.num_properties = ARRAY_SIZE(mt_usb_properties);
 	mt_chg->usb_psd.get_property = mt_usb_get_property;
-	mt_chg->usb_psd.set_property = mt_usb_set_property;
-	mt_chg->usb_psd.property_is_writeable = mt_usb_prop_is_writeable;
 	mt_chg->usb_cfg.drv_data = mt_chg;
     
 	mt_chg->battery_psd.name = "battery";
@@ -3255,23 +3053,33 @@ EXPORT_SYMBOL(oplus_chg_get_mmi_status);
 #define VBUS_5V	5000
 #define IBUS_2A	2000
 #define IBUS_3A	3000
-static bool oplus_mt6360_get_pd_type(void)
+
+static int oplus_mt6360_get_pd_type(void)
 {
 	if (pinfo != NULL) {
+		chg_err("pd_type: %d\n", pinfo->pd_type);
 		if (pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK ||
-			pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_PD30 ||
-			pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_APDO)
-			return true;
-		//return mtk_pdc_check_charger(pinfo);
+				pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_PD30) {
+			return PD_ACTIVE;
+		} else if (pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK_APDO) {
+			if (oplus_pps_get_chg_status() != PPS_NOT_SUPPORT) {
+				return PD_PPS_ACTIVE;
+			} else {
+				return PD_ACTIVE;
+			}
+		} else {
+			return PD_INACTIVE;
+		}
 	}
-	return false;
+
+	return PD_INACTIVE;
 }
 
 static int oplus_mt6360_pd_setup(void)
 {
 	int vbus_mv = VBUS_5V;
 	int ibus_ma = IBUS_2A;
-	int ret = -1;
+	int ret = 0;
 	struct adapter_power_cap cap;
 	struct oplus_chg_chip *chip = g_oplus_chip;
 	int i;
@@ -3481,14 +3289,14 @@ void oplus_chg_set_camera_on(bool val)
 		g_oplus_chip->camera_on = val;
 		if (g_oplus_chip->dual_charger_support) {
 			if (g_oplus_chip->camera_on == 1 && g_oplus_chip->charger_exist) {
-				if (g_oplus_chip->chg_ops->get_charger_subtype() == CHARGER_SUBTYPE_QC){
+				if (g_oplus_chip->chg_ops->get_charger_subtype() == CHARGER_SUBTYPE_QC) {
 					oplus_chg_set_qc_config();
-				} else if (g_oplus_chip->chg_ops->get_charger_subtype() == CHARGER_SUBTYPE_PD){
+				} else if (g_oplus_chip->chg_ops->get_charger_subtype() == CHARGER_SUBTYPE_PD) {
 					oplus_mt6360_pd_setup();
 				}
 			}
 		}
-        }
+	}
 }
 EXPORT_SYMBOL(oplus_chg_set_camera_on);
 #endif
@@ -3570,7 +3378,6 @@ void oplus_gauge_set_event(int event)
 
 void sc_select_charging_current(struct charger_manager *info, struct charger_data *pdata)
 {
-
 	if (pinfo->sc.g_scd_pid != 0 && pinfo->sc.disable_in_this_plug == false) {
 		chr_debug("sck: %d %d %d %d %d\n",
 			info->sc.pre_ibat,
@@ -3712,6 +3519,7 @@ static int mtk_charger_probe(struct platform_device *pdev)
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	if (oplus_usbtemp_check_is_support() == true)
 		oplus_usbtemp_thread_init();
+	oplus_chg_configfs_init(oplus_chip);
 #endif
 
 	srcu_init_notifier_head(&info->evt_nh);
@@ -3753,6 +3561,9 @@ static int mtk_charger_probe(struct platform_device *pdev)
 
 static int mtk_charger_remove(struct platform_device *dev)
 {
+#ifdef OPLUS_FEATURE_CHG_BASIC
+	oplus_chg_configfs_exit();
+#endif
 	return 0;
 }
 

@@ -272,26 +272,30 @@ extern int bq25601d_suspend_charger(void);
 
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 //extern CHARGER_TYPE mt_charger_type_detection(void);
-extern int mt_power_supply_type_check(void);
+
 extern bool pmic_chrdet_status(void);
-extern int battery_meter_get_charger_voltage(void);
+
 extern int charger_pretype_get(void);
 
 extern int get_rtc_spare_fg_value(void);
 extern int set_rtc_spare_fg_value(int val);
-extern int get_rtc_spare_oplus_fg_value(void);
-extern int set_rtc_spare_oplus_fg_value(int val);
+
 
 extern void mt_usb_connect(void);
 extern void mt_usb_disconnect(void);
 
-extern int mt_get_chargerid_volt (void);
+
 
 //#ifdef CONFIG_MTK_HAFG_20
 #ifndef CONFIG_OPLUS_CHARGER_MTK6873
 extern void mt_set_chargerid_switch_val(int value);
 extern int mt_get_chargerid_switch_val(void);
 extern int oplus_usb_switch_gpio_gpio_init(void);
+extern int battery_meter_get_charger_voltage(void);
+extern int mt_power_supply_type_check(void);
+extern int get_rtc_spare_oplus_fg_value(void);
+extern int set_rtc_spare_oplus_fg_value(int val);
+extern int mt_get_chargerid_volt(void);
 #endif
 //#endif /* CONFIG_OPLUS_CHARGER_MTK */
 

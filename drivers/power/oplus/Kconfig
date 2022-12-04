@@ -31,6 +31,16 @@ config OPLUS_SHORT_HW_CHECK
 	help
 	  Say Y here to declare charging system is on MTK
 
+config MTK_DISABLE_GAUGE
+	bool "OPLUS MTK disable gauge "
+	help
+	  Say Y here to include support
+
+config OPLUS_SMOOTH_SOC
+	bool "OPLUS config smooth soc "
+	help
+	  Say Y here to include smooth soc
+
 config OPLUS_SHORT_USERSPACE
 	bool "OPLUS batt userspace"
 	help

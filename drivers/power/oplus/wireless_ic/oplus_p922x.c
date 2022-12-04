@@ -2458,6 +2458,13 @@ static int oplus_wpc_chg_parse_chg_dt(struct oplus_p922x_ic *chip)
 	}
 	chg_err("curr_cp_to_charger[%d]\n", chip->p922x_chg_status.wpc_chg_param.curr_cp_to_charger);
 
+	rc = of_property_read_u32(node, "qcom,wireless_power",
+			&chip->p922x_chg_status.wireless_power);
+	if (rc) {
+		chip->p922x_chg_status.wireless_power = 0;
+	}
+	chg_err("wireless_power[%d]\n", chip->p922x_chg_status.wireless_power);
+
 	return 0;
 }
 
@@ -6669,6 +6676,62 @@ static int init_wireless_charge_proc(struct oplus_p922x_ic *chip)
 	return 0;
 }
 
+static int p922x_wpc_get_max_wireless_power(void)
+{
+	struct oplus_p922x_ic *chip = p922x_chip;
+	int max_wireless_power = 0;
+	int adapter_wireless_power = 0;
+	int base_wireless_power = 0;
+
+	if (chip == NULL) {
+		chg_err("wireless chip NULL\n");
+		return -ENODEV;
+	}
+	adapter_wireless_power = chip->p922x_chg_status.adapter_power;
+	base_wireless_power = chip->p922x_chg_status.dock_version;
+
+	switch (adapter_wireless_power) {
+		case ADAPTER_POWER_NUKNOW:
+			adapter_wireless_power = 0;
+			break;
+		case ADAPTER_POWER_20W:
+			adapter_wireless_power = 12;
+			break;
+		case ADAPTER_POWER_30W:
+			adapter_wireless_power = 12;
+			break;
+		case ADAPTER_POWER_50W:
+			adapter_wireless_power = 35;
+			break;
+		case ADAPTER_POWER_65W:
+			adapter_wireless_power = 45;
+			break;
+		default:
+			adapter_wireless_power = 0;
+			break;
+	}
+
+	switch (base_wireless_power) {
+		case DOCK_OAWV00:
+			base_wireless_power = 30;
+			break;
+		case DOCK_OAWV01:
+			base_wireless_power = 40;
+			break;
+		case DOCK_OAWV02:
+			base_wireless_power = 50;
+			break;
+		default:
+			base_wireless_power = 15;
+			break;
+	}
+
+	max_wireless_power = adapter_wireless_power > chip->p922x_chg_status.wireless_power ? chip->p922x_chg_status.wireless_power : adapter_wireless_power;
+	max_wireless_power = max_wireless_power > base_wireless_power ? base_wireless_power : max_wireless_power;
+
+	return 1000 * max_wireless_power;
+}
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 static enum power_supply_property p922x_wireless_props[] = {
 	POWER_SUPPLY_PROP_PRESENT,
@@ -6958,6 +7021,7 @@ bool p922x_check_chip_is_null(void)
 }
 
 struct oplus_wpc_operations p922x_ops = {
+	.wpc_get_max_wireless_power = p922x_wpc_get_max_wireless_power,
 	.wpc_get_wireless_charge_start = p922x_wireless_charge_start,
 	.wpc_get_normal_charging = p922x_wpc_get_normal_charging,
 	.wpc_get_fast_charging = p922x_wpc_get_fast_charging,

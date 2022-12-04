@@ -3551,7 +3551,7 @@ EXPORT_SYMBOL(oplus_chg_get_mmi_status);
 #define VBUS_5V	5000
 #define IBUS_2A	2000
 #define IBUS_3A	3000
-bool oplus_chg_get_pd_type(void)
+int oplus_chg_get_pd_type(void)
 {
 	if (pinfo != NULL) {
 		if (pinfo->pd_type == MTK_PD_CONNECT_PE_READY_SNK ||

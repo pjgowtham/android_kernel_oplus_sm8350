@@ -55,7 +55,11 @@
 #define WPC_CHARGE_CURRENT_LIMIT_200MA						200
 #define WPC_CHARGE_CURRENT_ZERO								0		//0mA
 #define WPC_CHARGE_CURRENT_200MA							200
+#ifdef OPLUS_CUSTOM_OP_DEF
+#define WPC_CHARGE_CURRENT_DEFAULT							250		//250mA
+#else
 #define WPC_CHARGE_CURRENT_DEFAULT							500		//500mA
+#endif
 #define WPC_CHARGE_CURRENT_BPP_INIT							150
 #define WPC_CHARGE_CURRENT_BPP								1000
 #define WPC_CHARGE_CURRENT_EPP_INIT							200
@@ -114,7 +118,7 @@
 #define WPC_BATT_FULL_CNT									4
 #define WPC_RECHARGE_CNT									5
 
-#define WPC_INCREASE_CURRENT_DELAY                          2   
+#define WPC_INCREASE_CURRENT_DELAY                          2
 #define WPC_ADJUST_CV_DELAY									10
 #define WPC_ADJUST_CURRENT_DELAY							0
 #define WPC_SKEW_DETECT_DELAY								2
@@ -133,6 +137,7 @@
 #define FAN_PWM_PULSE_IN_FASTCHG_MODE_V03_07			FAN_PWM_PULSE_IN_FASTCHG_MODE_DEFAULT
 #define FAN_PWM_PULSE_IN_FASTCHG_MODE_V08_15			70
 
+#define DOCK_OAWV00										0
 #define DOCK_OAWV01										1
 #define DOCK_OAWV02										2
 #define DOCK_OAWV03										3
@@ -273,6 +278,13 @@ typedef enum {
 	WPC_CHG_IC_ERR_UNKNOW,
 }E_WPC_CHG_ERR_TYPE;
 
+enum wls_status_keep_type {
+	WLS_SK_NULL,
+	WLS_SK_BY_KERNEL,
+	WLS_SK_BY_HAL,
+	WLS_SK_WAIT_TIMEOUT,
+};
+
 enum wireless_mode {
 	WIRELESS_MODE_NULL,
 	WIRELESS_MODE_TX,
@@ -349,6 +361,36 @@ struct wpc_chg_param_t{
 	int bpp_temp_warm_fastchg_ma;
 	int epp_temp_warm_fastchg_ma;
 	int epp_15w_temp_warm_fastchg_ma;
+	int svooc_target_ichg_cold_fastchg_ma;       // -2
+	int svooc_target_ichg_little_cold_fastchg_ma;      // 0
+	int vooc_target_ichg_little_cold_fastchg_ma;
+	int bpp_target_ichg_little_cold_fastchg_ma;
+	int epp1_target_ichg_little_cold_fastchg_ma;
+	int epp2_target_ichg_little_cold_fastchg_ma;
+	int epp3_target_ichg_little_cold_fastchg_ma;
+	int svooc_target_ichg_cool_fastchg_ma;      //5
+	int vooc_target_ichg_cool_fastchg_ma;
+	int bpp_target_ichg_cool_fastchg_ma;
+	int epp1_target_ichg_cool_fastchg_ma;
+	int epp2_target_ichg_cool_fastchg_ma;
+	int epp3_target_ichg_cool_fastchg_ma;
+	int svooc_target_ichg_normal_region1_fastchg_ma;      //12
+	int vooc_target_ichg_normal_region1_fastchg_ma;
+	int bpp_target_ichg_normal_region1_fastchg_ma;
+	int epp1_target_ichg_normal_region1_fastchg_ma;
+	int epp2_target_ichg_normal_region1_fastchg_ma;
+	int epp3_target_ichg_normal_region1_fastchg_ma;
+	int svooc_target_ichg_normal_region2_fastchg_ma;      //37.5
+	int vooc_target_ichg_normal_region2_fastchg_ma;
+	int bpp_target_ichg_normal_region2_fastchg_ma;
+	int epp1_target_ichg_normal_region2_fastchg_ma;
+	int epp2_target_ichg_normal_region2_fastchg_ma;
+	int epp3_target_ichg_normal_region2_fastchg_ma;
+	int svooc_target_ichg_normal_region3_fastchg_ma;      //40
+	int vooc_target_ichg_normal_region3_fastchg_ma;
+	int bpp_target_ichg_normal_region3_fastchg_ma;
+	int epp_target_ichg_normal_region3_fastchg_ma;
+	int svooc_target_ichg_warm_fastchg_ma;      //45
 	int curr_cp_to_charger;
 	int target_ichg;
 	int pre_target_ichg;
@@ -371,6 +413,9 @@ struct wpc_data{
 	int charge_type;
 	int dock_version;
 	int charge_voltage;
+	int max_charge_voltage;
+	int max_charge_current;
+	int charge_current_index;
 	int charge_current;
 	int cc_value_limit;
 	int vout;
@@ -409,6 +454,7 @@ struct wpc_data{
 	char				CEP_value;
 	E_RX_MODE rx_runing_mode;
 	E_ADAPTER_POWER adapter_power;
+	int wireless_power;
 	int freq_threshold;
 	int freq_check_count;
 	bool freq_thr_inc;
@@ -465,6 +511,7 @@ struct wpc_data{
 	int charger_dect_count;
 	int set_fastchg_count;
 	int target_iin;
+	int support_airsvooc;
 #ifdef SUPPORT_OPLUS_WPC_VERIFY
 	char random_num[8];
 	char noise_num[9];
@@ -527,6 +574,7 @@ struct oplus_wpc_operations {
 	int (*wpc_get_voltage_now)(void);
 	int (*wpc_get_current_now)(void);
 	int (*wpc_get_real_type)(void);
+	int (*wpc_get_max_wireless_power)(void);
 	bool (*wpc_get_wireless_charge_start)(void);
 	bool (*wpc_get_normal_charging)(void);
 	bool (*wpc_get_fast_charging)(void);
@@ -562,7 +610,7 @@ int oplus_wpc_get_online_status(void);
 int oplus_wpc_get_voltage_now(void);
 int oplus_wpc_get_current_now(void);
 int oplus_wpc_get_real_type(void);
-
+int oplus_wpc_get_max_wireless_power(void);
 void oplus_wpc_init(struct oplus_wpc_chip *chip);
 
 void oplus_wpc_set_wrx_en_value(int value);

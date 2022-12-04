@@ -3047,7 +3047,6 @@ int smblib_disable_hw_jeita(struct smb_charger *chg, bool disable)
 	 * Disable h/w base JEITA compensation if s/w JEITA is enabled
 	 */
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 mask = JEITA_EN_HARDLIMIT_BIT | JEITA_EN_COLD_SL_FCV_BIT
 #else
 	mask = JEITA_EN_COLD_SL_FCV_BIT

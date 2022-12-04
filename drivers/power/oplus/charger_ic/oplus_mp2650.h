@@ -148,6 +148,7 @@
 #define REG07_MP2650_OTG_CURRENT_LIMIT_STEP                    250    //default 3A
 #define REG07_MP2650_OTG_CURRENT_LIMIT_1A                      BIT(2)
 #define REG07_MP2650_OTG_CURRENT_LIMIT_1250MA			(BIT(2) | BIT(0))
+#define REG07_MP2650_OTG_CURRENT_LIMIT_1500MA			(BIT(2) | BIT(1))
 
 #define REG07_MP2650_PRECHARGE_THRESHOLD_MASK                  (BIT(5) | BIT(4))
 #define REG07_MP2650_PRECHARGE_THRESHOLD_6600MV                0
@@ -562,6 +563,7 @@
 #define REG30_MP2650_OPTION_MASK					(BIT(3))
 #define REG31_MP2650_ADDRESS                                 0x31
 #define REG33_MP2650_ADDRESS                                 0x33
+#define REG36_MP2650_ADDRESS                                 0x36
 #define REG37_MP2650_ADDRESS                                 0x37
 #define REG39_MP2650_ADDRESS                                 0x39
 #define REG3F_MP2650_ADDRESS                                 0x3F
@@ -639,8 +641,12 @@ extern int oplus_chg_get_charger_subtype(void);
 extern int oplus_chg_set_pd_config(void);
 extern int oplus_chg_set_qc_config(void);
 extern int oplus_chg_enable_qc_detect(void);
-extern bool oplus_chg_get_pd_type(void);
+extern int oplus_chg_get_pd_type(void);
+extern int oplus_chg_set_pps_config(int vbus_mv, int ibus_ma);
+extern u32 oplus_chg_get_pps_status(void);
+extern int oplus_chg_pps_get_max_cur(int vbus_mv);
 extern bool oplus_mt_get_vbus_status(void);
+extern bool oplus_check_pdphy_ready(void);
 #else /* CONFIG_OPLUS_CHARGER_MTK */
 extern int qpnp_get_battery_voltage(void);
 extern int opchg_get_charger_type(void) ;
@@ -657,7 +663,7 @@ bool oplus_pmic_check_chip_is_null(void);
 extern int oplus_chg_get_charger_subtype(void);
 extern int oplus_chg_set_pd_config(void);
 extern int oplus_chg_set_qc_config(void);
-extern bool oplus_sm8150_get_pd_type(void);
+extern int oplus_sm8150_get_pd_type(void);
 extern int oplus_chg_enable_qc_detect(void);
 extern void oplus_get_usbtemp_volt(struct oplus_chg_chip *chip);
 extern void oplus_set_typec_sinkonly(void);

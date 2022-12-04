@@ -498,6 +498,9 @@ struct smb_charger {
 	struct delayed_work	usbov_dbc_work;
 	struct delayed_work	pr_swap_detach_work;
 	struct delayed_work	pr_lock_clear_work;
+#ifdef OPLUS_CUSTOM_OP_DEF
+	struct delayed_work	reset_rd_work;
+#endif
 
 	struct alarm		lpd_recheck_timer;
 	struct alarm		moisture_protection_alarm;
@@ -613,6 +616,7 @@ struct smb_charger {
 	int			wls_icl_ua;
 	bool			dcin_aicl_done;
 	bool			hvdcp3_standalone_config;
+	bool			low_voltage_charger;
 
 	/* workaround flag */
 	u32			wa_flags;
@@ -677,6 +681,9 @@ struct smb_charger {
 	struct delayed_work wait_wired_charge_on;
 	struct delayed_work wait_wired_charge_off;
 	struct delayed_work otg_disable_timeout_work;
+#ifdef OPLUS_CUSTOM_OP_DEF
+	struct delayed_work connect_check_work;
+#endif
 	int wired_in_flag;
 	int otg_disable_timeout;
 #endif
@@ -717,6 +724,18 @@ struct smb_charger {
     struct pinctrl_state    *idt_en_active;
     struct pinctrl_state    *idt_en_sleep;
     struct pinctrl_state    *idt_en_default;
+
+    int         wrx_en_gpio;
+    struct pinctrl      *wrx_en_pinctrl;
+    struct pinctrl_state    *wrx_en_active;
+    struct pinctrl_state    *wrx_en_sleep;
+    struct pinctrl_state    *wrx_en_default;
+
+    int         wrx_otg_gpio;
+    struct pinctrl      *wrx_otg_pinctrl;
+    struct pinctrl_state    *wrx_otg_active;
+    struct pinctrl_state    *wrx_otg_sleep;
+
 #endif
 
 };
@@ -998,6 +1017,10 @@ int smblib_force_vbus_voltage(struct smb_charger *chg, u8 val);
 int smblib_get_irq_status(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_qc3_main_icl_offset(struct smb_charger *chg, int *offset_ua);
+#ifdef OPLUS_CUSTOM_OP_DEF
+int smblib_set_prop_reset_rd(struct smb_charger *chg,
+				const union power_supply_propval *val);
+#endif
 
 int smblib_init(struct smb_charger *chg);
 int smblib_deinit(struct smb_charger *chg);

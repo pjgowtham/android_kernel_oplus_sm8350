@@ -35,8 +35,6 @@ static void oplus_adpater_awake_init(struct oplus_adapter_chip *chip)
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	wake_lock_init(&chip->adapter_wake_lock, WAKE_LOCK_SUSPEND, "adpater_wake_lock");
-#elif (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 102))
-	chip->adapter_ws = wakeup_source_register("adpater_wake_lock");
 #else
 	chip->adapter_ws = wakeup_source_register(NULL, "adpater_wake_lock");
 #endif

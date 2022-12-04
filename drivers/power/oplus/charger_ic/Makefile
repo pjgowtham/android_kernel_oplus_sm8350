@@ -3,12 +3,29 @@ ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
 	ifeq ($(CONFIG_MTK_HAFG_20),y)
 		obj-y	+= oplus_battery_mtk_fg_20.o
 	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6763),y)
-		obj-y	+= oplus_battery_mtk6763.o
+		obj-y	+= oplus_battery_mtk6763R.o
 	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6771),y)
 		obj-y	+= oplus_bq24190.o
 		obj-y	+= oplus_bq25890h.o
 		obj-y   += oplus_bq25601d.o
 		obj-y   += smb1351-charger.o
+	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6769),y)
+		MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+		subdir-ccflags-y += -Werror
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/include
+		subdir-ccflags-$(CONFIG_USB_MU3D_DRV) += -I$(srctree)/drivers/misc/mediatek/mu3d/drv
+		subdir-ccflags-$(CONFIG_USB_MTK_HDRC) += -I$(srctree)/drivers/misc/mediatek/usb20/
+		subdir-ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6355) += -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6355
+		subdir-ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6356) += -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6356
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
+		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/battery/
+		obj-$(CONFIG_CHARGER_BQ2589X) += oplus_bq2589x_charger.o
+		obj-$(CONFIG_CHARGER_BQ2591X) += oplus_bq2591x_charger.o
+		obj-y	+= oplus_battery_mtk6769.o
 	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6779),y)
 		MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
@@ -16,7 +33,7 @@ ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
 		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
 		obj-y	+= oplus_battery_mtk6779.o
-	else ifeq ($(CONFIG_MACH_MT6785),y)
+	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6785),y)
 		MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
@@ -24,7 +41,7 @@ ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
 		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/thermal/$(MTK_PLATFORM)/inc
 		obj-y	+= oplus_mp2650.o
-		obj-y	+= oplus_da9313.o
+		obj-y   += oplus_charge_pump.o
 		obj-y   += oplus_usbtemp.o
 		obj-y   += oplus_battery_mtk6785.o
 	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6779Q),y)
@@ -34,6 +51,34 @@ ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
 		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
 		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
 		obj-y	+= oplus_battery_mtk6779Q.o
+		obj-y	+= oplus_bq25910.o
+	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6779R),y)
+                MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+                subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+                subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		obj-y   += oplus_usbtemp.o
+                obj-y   += oplus_battery_mtk6779R.o
+		obj-y	+= oplus_bq25910.o
+	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6765R),y)
+		MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+		subdir-ccflags-y += -Werror
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/include
+		subdir-ccflags-$(CONFIG_USB_MU3D_DRV) += -I$(srctree)/drivers/misc/mediatek/mu3d/drv
+		subdir-ccflags-$(CONFIG_USB_MTK_HDRC) += -I$(srctree)/drivers/misc/mediatek/usb20/
+		subdir-ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6355) += -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6355
+		subdir-ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6356) += -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6356
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc
+		subdir-ccflags-y += -I$(srctree)/drivers/power/supply
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/usb20
+		obj-y   += oplus_battery_mtk6765R.o
+		obj-y   += oplus_charger_type.o
+		obj-$(CONFIG_CHARGER_RT9471) += oplus_rt9471.o
+		obj-$(CONFIG_CHARGER_BQ2589X) += oplus_bq2589x.o
+		obj-$(CONFIG_CHARGER_BQ2591X) += oplus_bq2591x.o
 	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6885),y)
                 MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
                 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
@@ -41,6 +86,42 @@ ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
                 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
                 subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
 		obj-y   += oplus_battery_mtk6885R.o
+		obj-y   += oplus_da9313.o
+		obj-y   += oplus_mp2650.o
+		obj-y   += oplus_usbtemp.o
+	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6889),y)
+		MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
+		obj-y	+= oplus_mp2650.o
+		obj-y   += oplus_da9313.o
+		obj-y   += oplus_usbtemp.o
+		obj-y   += oplus_battery_mtk6889R.o
+	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6893),y)
+		MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
+		obj-y   += oplus_mp2650.o
+		obj-y   += oplus_charge_pump.o
+		obj-y   += oplus_usbtemp.o
+		obj-y   += oplus_battery_mtk6893R.o
+	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6877),y)
+		MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/include
+		subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/typec/tcpc/inc
+		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
+		obj-y   += oplus_mp2650.o
+		obj-y   += oplus_charge_pump.o
+		obj-y   += oplus_usbtemp.o
+		obj-y   += oplus_battery_mtk6877R.o
 	else ifeq ($(CONFIG_OPLUS_CHARGER_MTK6873),y)
                 MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
                 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
@@ -58,9 +139,11 @@ ifeq ($(CONFIG_OPLUS_CHARGER_MTK),y)
 		subdir-ccflags-y += -I$(srctree)/drivers/power/supply/mediatek/misc/
 		obj-y   += oplus_battery_mtk6853R.o
 		obj-y	+= oplus_bq25910.o
+		obj-y   += oplus_usbtemp.o
 		obj-y	+= oplus_mp2650.o
 		obj-y   += oplus_da9313.o
 		obj-y	+= oplus_max77932b.o
+		obj-y	+= oplus_bq2597x.o
 	else
 		//obj-y	+= oplus_battery_mtk.o
 	endif
@@ -112,14 +195,11 @@ else ifeq ($(CONFIG_OPLUS_SM8250_CHARGER),y)
 	obj-y	+= oplus_battery_msm8250.o
 	obj-y	+= oplus_mp2650.o
 	obj-y   += oplus_usbtemp.o
+
 else ifeq ($(CONFIG_OPLUS_SM8150R_CHARGER),y)
 	obj-y	+= oplus_da9313.o
 	obj-y	+= oplus_mp2650.o
 	obj-y	+= oplus_battery_msm8150Q.o
-else ifeq ($(CONFIG_OPLUS_SM8150R_CHARGER),y)
-	obj-y	+= oplus_da9313.o
-	obj-y	+= oplus_battery_sm8350.o
-	obj-y	+= oplus_mp2650.o
 else
 	obj-y	+= oplus_battery_msm8976.o
 endif 

@@ -85,6 +85,19 @@ int oplus_wpc_get_real_type(void)
 		return POWER_SUPPLY_TYPE_UNKNOWN;
 }
 
+int oplus_wpc_get_max_wireless_power(void)
+{
+	if (!g_wpc_chip) {
+		//chg_err("g_wpc_chip null, return\n");
+		return -EINVAL;
+	}
+	if (g_wpc_chip->wpc_ops && g_wpc_chip->wpc_ops->wpc_get_max_wireless_power) {
+		return g_wpc_chip->wpc_ops->wpc_get_max_wireless_power();
+	} else {
+		return 0;
+	}
+}
+
 void oplus_wpc_set_otg_en_val(int value)
 {
 	return;

@@ -12,7 +12,9 @@
 
 #include <linux/power_supply.h>
 #ifdef CONFIG_OPLUS_CHARGER_MTK
+#ifndef CONFIG_OPLUS_CHARGER_MTK6779R
 #include <mt-plat/charger_type.h>
+#endif
 #else /* CONFIG_OPLUS_CHARGER_MTK */
 
 #endif /* CONFIG_OPLUS_CHARGER_MTK */

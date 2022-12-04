@@ -29,6 +29,7 @@
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
 #define OEM_OPCODE_READ_BUFFER    0x10000
+#define OEM_OPCODE_DEBUG_BUFFER    0x10002
 #define OEM_READ_WAIT_TIME_MS    500
 #define MAX_OEM_PROPERTY_DATA_SIZE 64
 #endif
@@ -52,6 +53,7 @@
 #define BC_WLS_FW_UPDATE_STATUS_RESP	0x42
 #define BC_WLS_FW_PUSH_BUF_RESP		0x43
 #define BC_WLS_FW_GET_VERSION		0x44
+#define BC_SHUTDOWN_NOTIFY		0x47
 #define BC_GENERIC_NOTIFY		0x80
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
@@ -64,6 +66,8 @@
 #define BC_QC_DETECT					0x53
 #define BC_TYPEC_STATE_CHANGE			0x54
 #define BC_PD_SVOOC					0x55
+#define BC_USB_PLUGIN_IN_EVENT			0x56
+#define BC_USB_PLUGIN_OUT_EVENT			0x57
 #endif
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
@@ -154,7 +158,13 @@ enum battery_property_id {
 	BATT_SET_MATCH_TEMP,/*lzj add*/
 	BATT_BATTERY_AUTH,/*lzj add*/
 	BATT_RTC_SOC,/*lzj add*/
+	BATT_UEFI_INPUT_CURRENT,
+	BATT_UEFI_PRE_CHG_CURRENT,
+	BATT_UEFI_CHG_EN,
 	BATT_UEFI_LOAD_ADSP,
+	BATT_VSYSMIN_SET,
+	BATT_BAT_FULL_VOL_SET,
+	BATT_BAT_FULL_CURR_SET,
 	BATT_PROP_MAX,
 };
 
@@ -188,6 +198,14 @@ enum usb_property_id {
 	USB_SUSPEND_PMIC,
 	USB_OEM_MISC_CTL,
 	USB_CCDETECT_HAPPENED,
+	USB_GET_PPS_TYPE,
+	USB_GET_PPS_STATUS,
+	USB_SET_PPS_VOLT,
+	USB_SET_PPS_CURR,
+	USB_GET_PPS_MAX_CURR,
+	USB_PPS_READ_VBAT0_VOLT,
+	USB_PPS_CHECK_BTB_TEMP,
+	USB_PPS_MOS_CTRL,
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
 	USB_TEMP,
 	USB_REAL_TYPE,
@@ -195,28 +213,6 @@ enum usb_property_id {
 	USB_PROP_MAX,
 };
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
-typedef enum _FASTCHG_STATUS
-{
-	FAST_NOTIFY_UNKNOW,
-	FAST_NOTIFY_PRESENT,
-	FAST_NOTIFY_ONGOING,
-	FAST_NOTIFY_ABSENT,
-	FAST_NOTIFY_FULL,
-	FAST_NOTIFY_BAD_CONNECTED,
-	FAST_NOTIFY_BATT_TEMP_OVER,
-	FAST_NOTIFY_BTB_TEMP_OVER,
-	FAST_NOTIFY_DUMMY_START,
-	FAST_NOTIFY_ADAPTER_COPYCAT,
-	FAST_NOTIFY_ERR_COMMU,
-	FAST_NOTIFY_SWITCH_TEMP_RANGE,
-	FAST_NOTIFY_COMMU_TIME_OUT,
-	FAST_NOTIFY_COMMU_CLK_ERR,
-	FAST_NOTIFY_COMMU_SEND_ERR,
-	FAST_NOTIFY_HW_VBATT_HIGH,
-	FAST_NOTIFY_HW_TBATT_HIGH,
-}FASTCHG_STATUS;
-#endif
 
 enum wireless_property_id {
 	WLS_ONLINE,
@@ -226,6 +222,10 @@ enum wireless_property_id {
 	WLS_CURR_MAX,
 	WLS_TYPE,
 	WLS_BOOST_EN,
+	WLS_INPUT_CURR_LIMIT = 8,
+	WLS_BOOST_VOLT = 10,
+	WLS_BOOST_AICL_ENABLE,
+	WLS_BOOST_AICL_RERUN,
 	WLS_PROP_MAX,
 };
 
@@ -354,6 +354,8 @@ struct oplus_custom_gpio_pinctrl {
 struct oplus_chg_iio {
 	struct iio_channel	*usbtemp_v_chan;
 	struct iio_channel	*usbtemp_sup_v_chan;
+	struct iio_channel	*battcon_btb_chan;
+	struct iio_channel	*usbcon_btb_chan;
 };
 #endif
 
@@ -377,14 +379,15 @@ struct battery_chg_dev {
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	int ccdetect_irq;
 	struct delayed_work	suspend_check_work;
-	struct delayed_work	vooc_status_work;
+	struct delayed_work	adsp_voocphy_status_work;
 	struct delayed_work	otg_init_work;
 	struct delayed_work	ccdetect_work;
+	struct delayed_work	cid_status_change_work;
 	struct delayed_work	typec_state_change_work;
 	struct delayed_work	usbtemp_recover_work;
 	struct delayed_work	adsp_crash_recover_work;
 	struct delayed_work	check_charger_out_work;
-	struct delayed_work	voocphy_enable_check_work;
+	struct delayed_work	adsp_voocphy_enable_check_work;
 	struct delayed_work	otg_vbus_enable_work;
 	struct delayed_work	otg_status_check_work;
 	struct delayed_work	vbus_adc_enable_work;
@@ -392,7 +395,7 @@ struct battery_chg_dev {
 	struct delayed_work	check_charger_type_work;
 	u32			oem_misc_ctl_data;
 	bool			oem_usb_online;
-	struct delayed_work	voocphy_err_work;
+	struct delayed_work	adsp_voocphy_err_work;
 	bool					otg_prohibited;
 	bool					otg_online;
 	bool					is_chargepd_ready;
@@ -403,7 +406,11 @@ struct battery_chg_dev {
 	bool 				hvdcp_detect_ok;
 	bool					hvdcp_disable;
 	struct delayed_work 	hvdcp_disable_work;
-	bool					voocphy_err_check;
+	bool					adsp_voocphy_err_check;
+
+	struct delayed_work status_keep_clean_work;
+	struct wakeup_source *status_wake_lock;
+	bool status_wake_lock_on;
 #endif
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	int vchg_trig_irq;
@@ -429,7 +436,9 @@ struct battery_chg_dev {
 	struct mutex    read_buffer_lock;
 	struct completion    oem_read_ack;
 	struct oem_read_buffer_resp_msg  read_buffer_dump;
+	struct oem_read_buffer_resp_msg  debug_buffer;
 	int otg_scheme;
+	bool pmic_is_pm7250b;
 #endif
 };
 

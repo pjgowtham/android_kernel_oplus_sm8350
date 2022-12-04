@@ -51,10 +51,10 @@
 #include <soc/oplus/device_info.h>
 #endif
 #include "oplus_vooc_fw.h"
+#include "../oplus_pps.h"
 
 extern int charger_abnormal_log;
 
-static int op10_set_fw_new_version(struct oplus_vooc_chip *chip);
 static int op10_get_fw_old_version(struct oplus_vooc_chip *chip, u8 version_info[]);
 
 #ifdef CONFIG_OPLUS_CHARGER_MTK
@@ -72,6 +72,10 @@ static int op10_get_fw_old_version(struct oplus_vooc_chip *chip, u8 version_info
 #define FW_CHECK_FAIL		0
 #define FW_CHECK_SUCCESS	1
 
+#define REG_SYS0			0xC0
+#define REG_STATE			0xC4
+#define REG_HOST			0xC8
+
 #define POLYNOMIAL				0x04C11DB7
 #define INITIAL_REMAINDER		0xFFFFFFFF
 #define FINAL_XOR_VALUE		0xFFFFFFFF
@@ -86,6 +90,8 @@ static int op10_get_fw_old_version(struct oplus_vooc_chip *chip, u8 version_info
 #define CMD_XFER_R_DATA		0x03
 #define CMD_PRG_START			0x05
 #define CMD_USER_BOOT			0x06
+#define CMD_CHIP_ERASE			0x07
+#define CMD_GET_VERSION			0x08
 #define CMD_GET_CRC32			0x09
 #define CMD_SET_CKSM_LEN		0x0A
 #define CMD_DEV_STATUS			0x0B
@@ -94,6 +100,8 @@ static int op10_get_fw_old_version(struct oplus_vooc_chip *chip, u8 version_info
 #define ONE_WRITE_LEN_MAX		256
 #define FW_VERSION_LEN			11
 
+#define ENABLE_OVP_AND_WDT_FLAG		0xa5a50000
+#define DISABLE_OVP_AND_WDT_FLAG	0x0000ffff
 static struct oplus_vooc_chip *the_chip = NULL;
 struct wakeup_source *op10_update_wake_lock = NULL;
 
@@ -103,7 +111,7 @@ struct wakeup_source *op10_update_wake_lock = NULL;
 
 DEFINE_MUTEX(dma_wr_access_op10);
 
-static char gpDMABuf_pa[GTP_DMA_MAX_TRANSACTION_LENGTH] = {0};
+/*static char gpDMABuf_pa[GTP_DMA_MAX_TRANSACTION_LENGTH] = {0};*/
 
 #if GTP_SUPPORT_I2C_DMA
 static int i2c_dma_write(struct i2c_client *client, u8 addr, s32 len, u8 *txbuf);
@@ -299,10 +307,41 @@ static bool op10_fw_update_check(struct oplus_vooc_chip *chip)
 	int i = 0;
 	int ret = 0;
 	u8 fw_version[FW_VERSION_LEN] = {0};
+	u8 rx_buf[4] = {0};
+	u32 check_status_try_count = 100;//try 2s
+	u32 fw_status_address = 0x4000 - 0x10;
+	u32 new_fw_crc32 = 0;
 
 	ret = op10_get_fw_old_version(chip, fw_version);
 	if (ret == 1)
 		return false;
+
+	/* chip version */
+	ret = oplus_vooc_i2c_read(chip->client, CMD_GET_VERSION, 1, rx_buf);
+	if (ret < 0) {
+		chg_err("read CMD_GET_VERSION error:%d\n", ret);
+	} else {
+		switch (rx_buf[0]) {
+		case 0x01:
+		case 0x02:
+			chg_debug("chip is sy6610:0x%02x\n", rx_buf[0]);
+			break;
+		case 0x11:
+			chg_debug("chip is sy6610c:0x%02x\n", rx_buf[0]);
+			break;
+		default:
+			chg_debug("invalid chip version:0x%02x\n", rx_buf[0]);
+		}
+	}
+
+	/*read fw status*/
+	rx_buf[0] = fw_status_address & 0xFF;
+	rx_buf[1] = (fw_status_address >> 8) & 0xFF;
+	oplus_vooc_i2c_write(chip->client, CMD_SET_ADDR, 2, rx_buf);
+	msleep(1);
+	memset(rx_buf, 0, 4);
+	oplus_vooc_i2c_read(chip->client, CMD_XFER_R_DATA, 4, rx_buf);
+	chg_debug("fw crc32 status:0x%08x\n", *((u32 *)rx_buf));
 
 	chip->fw_mcu_version = fw_version[FW_VERSION_LEN-4];
 
@@ -312,8 +351,158 @@ static bool op10_fw_update_check(struct oplus_vooc_chip *chip)
 			return false;
 	}
 
+	/*noticefy OP10 to update the CRC32 and check it*/
+	*((u32 *)rx_buf) = chip->fw_data_count;
+	oplus_vooc_i2c_write(chip->client, CMD_SET_CKSM_LEN, 4, rx_buf);
+	msleep(5);
+	if (check_crc32_available(chip, check_status_try_count) == -1) {
+		chg_debug("crc32 is not available, timeout!\n");
+		return false;
+	}
+
+	/* check crc32 is correct */
+	memset(rx_buf, 0, 4);
+	oplus_vooc_i2c_read(chip->client, CMD_GET_CRC32, 4, rx_buf);
+	new_fw_crc32 = crc32_sram(chip);
+	chg_debug("fw_data_crc:0x%0x, the read data_crc32:0x%0x\n", new_fw_crc32, *((u32 *)rx_buf));
+	if (*((u32 *)rx_buf) != new_fw_crc32) {
+		chg_debug("crc32 compare fail!\n");
+		return false;
+	}
+
+	/* fw update success,jump to new fw */
+	/*oplus_vooc_i2c_read(chip->client, CMD_USER_BOOT, 1, rx_buf);*/
+
 	return true;
 }
+
+int op10_read_input_voltage(void)
+{
+	int ret = 0;
+	u8 read_buf[4] = {0};
+
+	if (!the_chip) {
+		printk("op10_read_input_voltage fail\n");
+		return -1;
+	}
+
+	//ret = oplus_i2c_dma_read(the_chip->client, REG_SYS0, 4, read_buf);
+	ret = oplus_vooc_i2c_read(the_chip->client, REG_SYS0, 4, read_buf);
+	if (ret < 0) {
+		printk("op10 read REG_SYS0 fail\n");
+		return -1;
+	}
+	printk("op10_read_input_voltage the data: %x, %x, %x, %x\n", read_buf[0], read_buf[1], read_buf[2], read_buf[3]);
+
+	ret = ((read_buf[3] << 8) | read_buf[2]);
+	printk("op10_read_input_voltage ret = %d\n", ret);
+
+	return ret;
+}
+
+int op10_read_vbat0_voltage(void)
+{
+	int ret = 0;
+	u8 read_buf[4] = {0};
+
+	if (!the_chip) {
+		printk("op10_read_vbat0_voltage fail\n");
+		return -1;
+	}
+
+	//ret = oplus_i2c_dma_read(the_chip->client, REG_SYS0, 4, read_buf);
+	ret = oplus_vooc_i2c_read(the_chip->client, REG_SYS0, 4, read_buf);
+	if (ret < 0) {
+		printk("op10 read REG_SYS0 fail\n");
+		return -1;
+	}
+	printk("op10_read_vbat0_voltage the data: %x, %x, %x, %x\n", read_buf[0], read_buf[1], read_buf[2], read_buf[3]);
+
+	ret = ((read_buf[1] << 8) | read_buf[0]);
+	printk("op10_read_vbat0_voltage ret = %d\n", ret);
+
+	return ret;
+}
+
+#define protect_temp_80 211
+int op10_check_btb_temp(void)
+{
+	int ret = 0;
+	int usb_btb, bat_btb = -1;
+	u8 read_buf[4] = {0};
+
+	if (!the_chip) {
+		printk("op10_check_btb_temp fail\n");
+		return -1;
+	}
+
+	//ret = oplus_i2c_dma_read(the_chip->client, REG_STATE, 4, read_buf);
+	ret = oplus_vooc_i2c_read(the_chip->client, REG_STATE, 4, read_buf);
+	if (ret < 0) {
+		printk("op10_check_btb_temp read REG_STATE fail\n");
+		return -1;
+	}
+	printk("op10_check_btb_temp the data: %x, %x, %x, %x\n", read_buf[0], read_buf[1], read_buf[2], read_buf[3]);
+
+	usb_btb = ((read_buf[3] << 8) | read_buf[2]);
+	bat_btb = ((read_buf[1] << 8) | read_buf[0]);
+	printk("op10_check_btb_temp usb_btb, bat_btb = %d, %d\n", usb_btb, bat_btb);
+
+	if (usb_btb < protect_temp_80 || bat_btb < protect_temp_80) {
+		printk("usb_btb or bat_btb over 80\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+int op10_pps_mos_ctrl(int on)
+{
+	int ret = 0;
+	int i = 0;
+	u32 ovp_flag = 0;
+
+	if (!the_chip) {
+		printk("op10_pps_mos_ctrl fail\n");
+		return -1;
+	}
+
+	if (on == 1){
+		ovp_flag =  ENABLE_OVP_AND_WDT_FLAG;
+		//ret = oplus_i2c_dma_write(the_chip->client, REG_HOST, 4, (u8 *)(&ovp_flag));
+		ret = oplus_vooc_i2c_write(the_chip->client, REG_HOST, 4, (u8 *)(&ovp_flag));
+		if (ret < 0) {
+			printk("op10_pps_mos_ctrl write REG_HOST fail\n");
+			return -1;
+		}
+		printk("op10_pps_mos_ctrl enable flags:0x%x, ret:%d\n", ovp_flag, ret);
+	} else {
+		ovp_flag =  DISABLE_OVP_AND_WDT_FLAG;
+		//ret = oplus_i2c_dma_write(the_chip->client, REG_HOST, 4, (u8 *)(&ovp_flag));
+		ret = oplus_vooc_i2c_write(the_chip->client, REG_HOST, 4, (u8 *)(&ovp_flag));
+		if (ret < 0) {
+			printk("op10_pps_mos_ctrl write REG_HOST fail\n");
+			return -1;
+		}
+		printk("op10_pps_mos_ctrl disable flags:0x%x, ret:%d\n", ovp_flag, ret);
+		if (ret < 0) {
+			for (i=0; i<3; i++) {
+				msleep(50);
+				//ret = oplus_i2c_dma_write(the_chip->client, REG_HOST, 4, (u8 *)(&ovp_flag));
+				ret = oplus_vooc_i2c_write(the_chip->client, REG_HOST, 4, (u8 *)(&ovp_flag));
+				if (ret >= 0)
+					break;
+			}
+		}
+		if(ret >= 0){
+			printk("op10_pps_mos_ctrl disable success\n");
+		}
+	}
+
+	return ret;
+}
+
 static int op10_fw_update(struct oplus_vooc_chip *chip)
 {
 	u32 check_status_try_count = 100;//try 2s
@@ -322,8 +511,18 @@ static int op10_fw_update(struct oplus_vooc_chip *chip)
 	u32 fw_len = 0, fw_offset = 0;
 	u32 write_len = 0, write_len_temp = 0, chunk_index = 0, chunk_len = 0;
 	u32 new_fw_crc32 = 0;
+	int rc = 0;
+	u32 fw_status_address = 0x4000 - 0x10;
 
 	chg_debug("start op_fw_update now, fw length is: %d\n", chip->fw_data_count);
+
+	/* chip erase */
+	rc = oplus_vooc_i2c_read(chip->client, CMD_CHIP_ERASE, 1, rx_buf);
+	if (rc < 0) {
+		chg_debug("read CMD_CHIP_ERASE error:%d\n", rc);
+		goto update_fw_err;
+	}
+	msleep(100);
 
 	/* check device status */
 	if (check_flash_idle(chip, check_status_try_count) == -1) {
@@ -379,15 +578,41 @@ static int op10_fw_update(struct oplus_vooc_chip *chip)
 	oplus_vooc_i2c_read(chip->client, CMD_GET_CRC32, 4, rx_buf);
 	new_fw_crc32 = crc32_sram(chip);
 	if (*((u32 *)rx_buf) != new_fw_crc32) {
-		chg_debug("fw_data_crc:%0x, the read data_crc32: %0x\n", new_fw_crc32, *((u32 *)rx_buf));
+		chg_debug("fw_data_crc:0x%0x, the read data_crc32:0x%0x\n", new_fw_crc32, *((u32 *)rx_buf));
 		chg_debug("crc32 compare fail!\n");
+
+		/*write FAIL*/
+		rx_buf[0] = fw_status_address & 0xFF;
+		rx_buf[1] = (fw_status_address >> 8) & 0xFF;
+		oplus_vooc_i2c_write(chip->client, CMD_SET_ADDR, 2, rx_buf);
+		msleep(1);
+		*((u32 *)rx_buf) = 0x4641494C;/*FAIL*/
+		oplus_vooc_i2c_write(chip->client, CMD_XFER_W_DAT, 4, rx_buf);
+		msleep(1);
+		oplus_vooc_i2c_read(chip->client, CMD_PRG_START, 1, rx_buf);
+		msleep(10);
+		if (check_flash_idle(chip, write_done_try_count) == -1) {
+			chg_debug("cannot wait flash write fail done, timeout!\n");
+		}
 		goto update_fw_err;
+	}
+
+	/*write SUCC*/
+	rx_buf[0] = fw_status_address & 0xFF;
+	rx_buf[1] = (fw_status_address >> 8) & 0xFF;
+	oplus_vooc_i2c_write(chip->client, CMD_SET_ADDR, 2, rx_buf);
+	msleep(1);
+	*((u32 *)rx_buf) = 0x53554343;/*SUCC*/
+	oplus_vooc_i2c_write(chip->client, CMD_XFER_W_DAT, 4, rx_buf);
+	msleep(1);
+	oplus_vooc_i2c_read(chip->client, CMD_PRG_START, 1, rx_buf);
+	msleep(10);
+	if (check_flash_idle(chip, write_done_try_count) == -1) {
+		chg_debug("cannot wait flash write succ done, timeout!\n");
 	}
 
 	/* fw update success,jump to new fw */
 	oplus_vooc_i2c_read(chip->client, CMD_USER_BOOT, 1, rx_buf);
-
-	op10_set_fw_new_version(chip);
 	chip->fw_mcu_version = chip->fw_data_version;
 	chg_debug("success!\n");
 	return 0;
@@ -436,48 +661,6 @@ static int op10_get_fw_old_version(struct oplus_vooc_chip *chip, u8 version_info
 	}
 	chg_debug("\n");*/
 
-	return 0;
-}
-
-static int op10_set_fw_new_version(struct oplus_vooc_chip *chip)
-{
-	u8 version_info[FW_VERSION_LEN] = {0};
-	u8 rx_buf[4] = {0}, i = 0;
-	u32 check_status_try_count = 100;//try 2s
-	u32 write_done_try_count = 500;//max try 10s
-	u32 fw_len_address = 0x4000 - 8;
-
-	for (i = 0; i < FW_VERSION_LEN; i++) {
-		version_info[i] = (u8)(chip->firmware_data[chip->fw_data_count - FW_VERSION_LEN + i]);
-	}
-	chg_debug("start write fw new version...\n");
-	if (check_flash_idle(chip, check_status_try_count) == -1) {
-		chg_debug("cannot get the fw old version because of the device is always busy!\n");
-		return 1;
-	}
-
-	rx_buf[0] = fw_len_address & 0xFF;
-	rx_buf[1] = (fw_len_address >> 8) & 0xFF;
-	oplus_vooc_i2c_write(chip->client, CMD_SET_ADDR, 2, rx_buf);
-	msleep(1);
-	oplus_vooc_i2c_read(chip->client, CMD_XFER_R_DATA, 4, rx_buf);
-	if (*((u32 *)rx_buf) < fw_len_address - FW_VERSION_LEN) {
-		oplus_vooc_i2c_write(chip->client, CMD_SET_ADDR, 2, rx_buf);
-		msleep(1);
-		oplus_vooc_i2c_write(chip->client, CMD_XFER_W_DAT, FW_VERSION_LEN, version_info);
-		msleep(1);
-		oplus_vooc_i2c_read(chip->client, CMD_PRG_START, 1, rx_buf);
-		msleep(10);
-		if (check_flash_idle(chip, write_done_try_count) == -1) {
-			chg_debug("cannot wait flash write done, timeout!\n");
-			return 1;
-		}
-	} else {
-		chg_debug("current fw length info is invalid!!!\n");
-		return 1;
-	}
-
-	chg_debug("success\n");
 	return 0;
 }
 
@@ -539,16 +722,9 @@ static int op10_fw_check_then_recover(struct oplus_vooc_chip *chip)
 	}
 
 	if (oplus_is_power_off_charging(chip) == true || oplus_is_charger_reboot(chip) == true) {
-		chip->mcu_update_ing = true;
-		opchg_set_reset_active_force(chip);
-		msleep(5);
-		update_result = op10_fw_update(chip);
 		chip->mcu_update_ing = false;
-		if (update_result) {
-			msleep(30);
-			opchg_set_clock_sleep(chip);
-			opchg_set_reset_active_force(chip);
-		}
+		opchg_set_clock_sleep(chip);
+		opchg_set_reset_sleep(chip);
 		ret = FW_NO_CHECK_MODE;
 	} else {
 		opchg_set_clock_active(chip);
@@ -628,6 +804,9 @@ struct oplus_vooc_operations oplus_op10_ops = {
 	.set_switch_mode = opchg_set_switch_mode,
 	.eint_regist = oplus_vooc_eint_register,
 	.eint_unregist = oplus_vooc_eint_unregister,
+	.pps_eint_regist = oplus_pps_eint_register,
+	.pps_eint_unregist = oplus_pps_eint_unregister,
+	.pps_get_value = oplus_pps_get_gpio_value,
 	.set_data_active = opchg_set_data_active,
 	.set_data_sleep = opchg_set_data_sleep,
 	.set_clock_active = opchg_set_clock_active,
@@ -651,6 +830,13 @@ struct oplus_vooc_operations oplus_op10_ops = {
 	.update_temperature_soc = op10_update_temperature_soc,
 };
 
+struct oplus_pps_mcu_operations oplus_op10_pps_ops = {
+	.get_input_volt = op10_read_input_voltage,
+	.get_vbat0_volt = op10_read_vbat0_voltage,
+	.check_btb_temp = op10_check_btb_temp,
+	.pps_mos_ctrl = op10_pps_mos_ctrl,
+};
+
 static void register_vooc_devinfo(void)
 {
 	int ret = 0;
@@ -666,6 +852,76 @@ static void register_vooc_devinfo(void)
 	}
 }
 
+static int op10_parse_fw_from_dt(struct oplus_vooc_chip *chip)
+{
+	struct device_node *node = chip->dev->of_node;
+	const char *data;
+	int len = 0;
+
+	if (!node) {
+		pr_err("device tree info. missing\n");
+		return -ENOMEM;
+	}
+
+	data = of_get_property(node, "vooc,firmware_data", &len);
+	if (!data) {
+		pr_err("%s: parse vooc fw failed\n", __func__);
+		return -ENOMEM;
+	}
+	pr_err("%s: parse vooc fw len: %d\n", __func__, len);
+
+	chip->firmware_data = data;
+	chip->fw_data_count = len;
+	chip->fw_data_version = data[len - 4];
+	pr_err("%s: version: 0x%x, count: %d\n", __func__, chip->fw_data_version, chip->fw_data_count);
+
+	return 0;
+}
+
+static int op10_parse_fw_from_array(struct oplus_vooc_chip *chip)
+{
+	if (chip->batt_type_4400mv) {
+		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
+		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
+		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
+	} else {
+		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
+		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
+		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
+	}
+
+	if (chip->vooc_fw_type == VOOC_FW_TYPE_OP10_4400_VOOC_FFC_15C) {
+		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
+		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
+		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
+	}
+
+	switch (chip->vooc_fw_type) {
+	case VOOC_FW_TYPE_OP10_4400_VOOC_FFC_15C:
+		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
+		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
+		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
+		break;
+	case VOOC_FW_TYPE_OP10_4450_VOOC_FFC_5V4A_4BIT:
+		chip->firmware_data = op10_fw_data_4450_vooc_ffc_5v4a_4bit;
+		chip->fw_data_count = sizeof(op10_fw_data_4450_vooc_ffc_5v4a_4bit);
+		chip->fw_data_version = op10_fw_data_4450_vooc_ffc_5v4a_4bit[chip->fw_data_count - 4];
+		break;
+	case VOOC_FW_TYPE_OP10_4250_VOOC_FFC_10V6A_4BIT:
+		chip->firmware_data = op10_fw_data_4250_vooc_ffc_10v6a_4bit;
+		chip->fw_data_count = sizeof(op10_fw_data_4250_vooc_ffc_10v6a_4bit);
+		chip->fw_data_version = op10_fw_data_4250_vooc_ffc_10v6a_4bit[chip->fw_data_count - 4];
+		break;
+	case VOOC_FW_TYPE_OP10_4450_VOOC_FFC_5V6A_4BIT:
+		chip->firmware_data = op10_fw_data_4450_vooc_ffc_5v6a_4bit;
+		chip->fw_data_count = sizeof(op10_fw_data_4450_vooc_ffc_5v6a_4bit);
+		chip->fw_data_version = op10_fw_data_4450_vooc_ffc_5v6a_4bit[chip->fw_data_count - 4];
+	default:
+		break;
+	}
+
+	return 0;
+}
 
 static void op10_shutdown(struct i2c_client *client)
 {
@@ -707,11 +963,17 @@ static ssize_t vooc_fw_check_read(struct file *filp, char __user *buff, size_t c
 	return (len < count ? len : count);
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 static const struct file_operations vooc_fw_check_proc_fops = {
 	.read = vooc_fw_check_read,
 	.llseek = noop_llseek,
 };
-
+#else
+static const struct proc_ops vooc_fw_check_proc_fops = {
+	.proc_read = vooc_fw_check_read,
+	.proc_lseek = noop_llseek,
+};
+#endif
 static int init_proc_vooc_fw_check(void)
 {
 	struct proc_dir_entry *p = NULL;
@@ -759,45 +1021,13 @@ static int op10_driver_probe(struct i2c_client *client, const struct i2c_device_
 	mutex_init(&chip->pinctrl_mutex);
 
 	oplus_vooc_fw_type_dt(chip);
-	if (chip->batt_type_4400mv) {
-		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
-		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
-		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
-	} else {//default
-		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
-		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
-		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
-	}
 
-	if (chip->vooc_fw_type == VOOC_FW_TYPE_OP10_4400_VOOC_FFC_15C) {
-		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
-		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
-		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
-	}
+	if (chip->parse_fw_from_dt)
+		op10_parse_fw_from_dt(chip);
+	else
+		op10_parse_fw_from_array(chip);
 
-	switch (chip->vooc_fw_type) {
-	case VOOC_FW_TYPE_OP10_4400_VOOC_FFC_15C:
-		chip->firmware_data = op10_fw_data_4400_vooc_ffc_15c;
-		chip->fw_data_count = sizeof(op10_fw_data_4400_vooc_ffc_15c);
-		chip->fw_data_version = op10_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
-		break;
-	case VOOC_FW_TYPE_OP10_4450_VOOC_FFC_5V4A_4BIT:
-		chip->firmware_data = op10_fw_data_4450_vooc_ffc_5v4a_4bit;
-		chip->fw_data_count = sizeof(op10_fw_data_4450_vooc_ffc_5v4a_4bit);
-		chip->fw_data_version = op10_fw_data_4450_vooc_ffc_5v4a_4bit[chip->fw_data_count - 4];
-		break;
-	case VOOC_FW_TYPE_OP10_4250_VOOC_FFC_10V6A_4BIT:
-		chip->firmware_data = op10_fw_data_4250_vooc_ffc_10v6a_4bit;
-		chip->fw_data_count = sizeof(op10_fw_data_4250_vooc_ffc_10v6a_4bit);
-		chip->fw_data_version = op10_fw_data_4250_vooc_ffc_10v6a_4bit[chip->fw_data_count - 4];
-		break;
-	case VOOC_FW_TYPE_OP10_4450_VOOC_FFC_5V6A_4BIT:
-		chip->firmware_data = op10_fw_data_4450_vooc_ffc_5v6a_4bit;
-		chip->fw_data_count = sizeof(op10_fw_data_4450_vooc_ffc_5v6a_4bit);
-		chip->fw_data_version = op10_fw_data_4450_vooc_ffc_5v6a_4bit[chip->fw_data_count - 4];
-	default:
-		break;
-	}
+	oplus_pps_register_ops(&oplus_op10_pps_ops);
 
 	chip->vops = &oplus_op10_ops;
 	chip->fw_mcu_version = 0;
@@ -806,7 +1036,7 @@ static int op10_driver_probe(struct i2c_client *client, const struct i2c_device_
 
 	opchg_set_clock_sleep(chip);
 	oplus_vooc_delay_reset_mcu_init(chip);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 102))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	op10_update_wake_lock = wakeup_source_register("op10_update_wake_lock");
 #else
 	op10_update_wake_lock = wakeup_source_register(NULL, "op10_update_wake_lock");

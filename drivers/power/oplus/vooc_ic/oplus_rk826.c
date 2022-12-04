@@ -50,6 +50,8 @@
 #include <linux/regulator/of_regulator.h>
 #include <linux/regulator/machine.h>
 #include <soc/oplus/device_info.h>
+#include <soc/oplus/system/boot_mode.h>
+#include <soc/oplus/system/oplus_project.h>
 #endif
 #include "oplus_vooc_fw.h"
 
@@ -113,9 +115,30 @@ typedef struct {
 	u32 header_crc;
 } struct_req, *pstruct_req;
 
+struct rk826_bat{
+	int uv_bat;
+	int current_bat;
+	int temp_bat;
+	int soc_bat;
+	int pre_uv_bat;
+	int pre_current_bat;
+	int pre_temp_bat;
+	int pre_soc_bat;
+	int reset_status;
+};
+
+static struct rk826_bat the_bat;
 static struct oplus_vooc_chip *the_chip = NULL;
 struct wakeup_source *rk826_update_wake_lock = NULL;
+struct delayed_work rk826_update_temp_soc;
 
+extern bool oplus_chg_get_chging_status(void);
+static void rk826_update_temperature_soc(void);
+static int rk826_get_prev_battery_mvolts(void);
+static int rk826_get_prev_battery_current(void);
+int rk826_get_battery_mvolts_current(void);
+void rk826_set_reset_active(struct oplus_vooc_chip *chip);
+void rk826_set_reset_sleep(struct oplus_vooc_chip *chip);
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 #define GTP_SUPPORT_I2C_DMA		0
 #define I2C_MASTER_CLOCK			300
@@ -1093,22 +1116,22 @@ int rk826_is_rf_ftm_mode(void)
 #endif
 }
 
-
 static int rk826_fw_check_then_recover(struct oplus_vooc_chip *chip)
 {
 	int update_result = 0;
 	int try_count = 5;
 	int ret = 0;
 	int rc = 0;
+	u8 value_buf[4] = {0};
+	int fw_check_err = 0;
 	u32 force_dis_update_flag = 0x00000000;
 	u32 sw_reset_flag = SW_RESET_FLAG;
-	u8 value_buf[2] = {0};
-	int fw_check_err = 0;
 
 	if (rk826_is_rf_ftm_mode() == true) {
 		opchg_set_reset_sleep(chip);
 		return 0;
 	}
+
 	if (!chip->firmware_data) {
 		chg_err("rk826_fw_data Null, Return\n");
 		return FW_ERROR_DATA_MODE;
@@ -1127,6 +1150,7 @@ static int rk826_fw_check_then_recover(struct oplus_vooc_chip *chip)
 			opchg_set_clock_sleep(chip);
 			opchg_set_reset_active_force(chip);
 		}
+		the_bat.reset_status = 0;
 		ret = FW_NO_CHECK_MODE;
 	} else {
 update_asic_fw:
@@ -1155,25 +1179,25 @@ update_asic_fw:
 			chip->vooc_fw_check = true;
 			chg_debug("fw check ok\n");
 		}
-		if (!update_result) {
-			msleep(10);
+		if (!update_result){
 			oplus_i2c_dma_write(chip->client, REG_SYS0, 4, (u8 *)(&force_dis_update_flag));
-			msleep(2);
+			oplus_i2c_dma_write(chip->client, REG_SLAVE, 4, (u8 *)(&force_dis_update_flag));
+			msleep(10);
 			oplus_i2c_dma_write(chip->client, REG_RESET, 4, (u8 *)(&sw_reset_flag));
-			usleep_range(1000000, 1000001);
-			rc = oplus_i2c_dma_read(chip->client, 0x52f8, 2, value_buf);
-			pr_err("rk826 read register 0x52f8 rc = %d\n", rc);
-				if (rc < 0) {
-					pr_err("rk826 read register 0x52f8 fail, rc = %d\n", rc);
-					pr_info("rk826 fw upgrade check ok.");
-				} else {
-					pr_info("read 0x52f8 success 0x%x,0x%x", value_buf[0],value_buf[1]);
-					fw_check_err ++;
-					if (fw_check_err > 3)
-						goto update_fw_err;
-					msleep(1000);
-					goto update_asic_fw;
-				}
+			usleep_range(1000000, 1000000);
+			rc = oplus_i2c_dma_read(chip->client, 0x52cc, 4, value_buf);
+			pr_err("rk826 read register 0x52cc rc = %d\n", rc);
+			if ((value_buf[0]==0x45)&&(value_buf[1]==0x4c)&&(value_buf[2]==0x44)&&(value_buf[3]==0x49)) {
+				pr_info("read 0x52cc success 0x%x,0x%x,0x%x,0x%x", value_buf[0],value_buf[1],value_buf[2],value_buf[3]);
+				fw_check_err ++;
+				if (fw_check_err > 3)
+					goto update_fw_err;
+				msleep(1000);
+				goto update_asic_fw;
+			} else {
+				pr_err("rk826 read register 0x52cc fail, rc = %d\n", rc);
+				pr_info("rk826 fw upgrade check ok.");
+			}
 		}
 update_fw_err:
 		__pm_relax(rk826_update_wake_lock);
@@ -1183,26 +1207,145 @@ update_fw_err:
 		ret = FW_CHECK_MODE;
 	}
 	opchg_set_reset_sleep(chip);
+	the_bat.reset_status = 0;
 
 	return ret;
+}
+
+static int rk826_fw_check_then_recover_fix(struct oplus_vooc_chip *chip)
+{
+	int update_result = 0;
+	int try_count = 5;
+	int ret = 0;
+	int rc = 0;
+	u8 value_buf[4] = {0};
+	int fw_check_err = 0;
+	u32 force_dis_update_flag = 0x00000000;
+	u32 sw_reset_flag = SW_RESET_FLAG;
+	if (!chip->firmware_data) {
+		chg_err("rk826_fw_data Null, Return\n");
+		return FW_ERROR_DATA_MODE;
+	} else {
+		chg_debug("begin\n");
+	}
+
+	if (oplus_is_power_off_charging(chip) == true || oplus_is_charger_reboot(chip) == true) {
+		chip->mcu_update_ing = true;
+		opchg_set_reset_active_force(chip);
+		msleep(5);
+		update_result = rk826_fw_update(chip);
+		chip->mcu_update_ing = false;
+		if (update_result) {
+			msleep(30);
+			opchg_set_clock_sleep(chip);
+			opchg_set_reset_active_force(chip);
+		}
+		the_bat.reset_status = 0;
+		ret = FW_NO_CHECK_MODE;
+	} else {
+update_asic_fw:
+		opchg_set_clock_active(chip);
+		chip->mcu_boot_by_gpio = true;
+		msleep(10);
+		opchg_set_reset_active_force(chip);
+		chip->mcu_update_ing = true;
+		msleep(2500);
+		chip->mcu_boot_by_gpio = false;
+		opchg_set_clock_sleep(chip);
+		__pm_stay_awake(rk826_update_wake_lock);
+		if (rk826_fw_update_check(chip) == FW_CHECK_FAIL || fw_check_err) {
+		chg_debug("firmware update start\n");
+		do {
+			update_result = rk826_fw_update(chip);
+			if (!update_result)
+				break;
+		} while ((update_result) && (--try_count > 0));
+			chg_debug("firmware update end, retry times %d\n", 5 - try_count);
+		} else {
+			chip->vooc_fw_check = true;
+			chg_debug("fw check ok\n");
+		}
+		if (!update_result){
+			oplus_i2c_dma_write(chip->client, REG_SYS0, 4, (u8 *)(&force_dis_update_flag));
+			oplus_i2c_dma_write(chip->client, REG_SLAVE, 4, (u8 *)(&force_dis_update_flag));
+			msleep(10);
+			oplus_i2c_dma_write(chip->client, REG_RESET, 4, (u8 *)(&sw_reset_flag));
+			usleep_range(1000000, 1000000);
+			memset(value_buf, 0, ARRAY_SIZE(value_buf));
+			rc = oplus_i2c_dma_read(chip->client, 0x52cc, 4, value_buf);
+			pr_err("rk826 read register 0x52cc rc = %d\n", rc);
+			if ((value_buf[0]==0x45)&&(value_buf[1]==0x4c)&&(value_buf[2]==0x44)&&(value_buf[3]==0x49)) {
+				pr_info("read 0x52cc success 0x%x,0x%x,0x%x,0x%x", value_buf[0],value_buf[1],value_buf[2],value_buf[3]);
+				fw_check_err ++;
+				if (fw_check_err > 3)
+					goto update_fw_err;
+				msleep(1000);
+				goto update_asic_fw;
+			} else {
+				pr_err("rk826 read register 0x52cc fail, rc = %d\n", rc);
+				pr_info("rk826 fw upgrade check ok.");
+			}
+		}
+update_fw_err:
+		__pm_relax(rk826_update_wake_lock);
+		chip->mcu_update_ing = false;
+		msleep(5);
+		opchg_set_reset_active(chip);
+		ret = FW_CHECK_MODE;
+	}
+	opchg_set_reset_sleep(chip);
+	the_bat.reset_status = 0;
+
+	return ret;
+}
+
+int rk826_asic_fw_status(struct oplus_vooc_chip *chip)
+{
+	u32 force_dis_update_flag = 0x00000000;
+	u32 sw_reset_flag = SW_RESET_FLAG;
+	u8 value_buf[4] = {0};
+	int rc = 0;
+
+	if (!chip)
+		return -EINVAL;
+	oplus_i2c_dma_write(chip->client, REG_SYS0, 4, (u8 *)(&force_dis_update_flag));
+	oplus_i2c_dma_write(chip->client, REG_SLAVE, 4, (u8 *)(&force_dis_update_flag));
+	msleep(10);
+	oplus_i2c_dma_write(chip->client, REG_RESET, 4, (u8 *)(&sw_reset_flag));
+	usleep_range(1000000, 1000000);
+	rc = oplus_i2c_dma_read(chip->client, 0x52cc, 4, value_buf);
+	pr_err("rk826 read register 0x52cc rc = %d\n", rc);
+	if ((value_buf[0]==0x45)&&(value_buf[1]==0x4c)&&(value_buf[2]==0x44)&&(value_buf[3]==0x49)) {
+		pr_info("read 0x52cc success 0x%x,0x%x,0x%x,0x%x", value_buf[0],value_buf[1],value_buf[2],value_buf[3]);
+		return 0;
+	} else {
+		pr_err("rk826 read register 0x52cc fail, rc = %d\n", rc);
+		return 1;
+	}
 }
 
 int rk826_set_battery_temperature_soc(int temp_bat, int soc_bat)
 {
 	int ret = 0;
-	u8 read_buf[4] = { 0 };
-	chg_err("kilody write rk826:temp_bat=%d,soc_bat=%d\n", temp_bat, soc_bat);
+	u8 read_buf[4] = {0};
+	u8 current_buf[4] = {0};
+
+	the_bat.temp_bat = temp_bat;
+	the_bat.soc_bat = soc_bat;
 
 	read_buf[0] = temp_bat & 0xff;
 	read_buf[1] = (temp_bat >> 8) & 0xff;
 	read_buf[2] = soc_bat & 0xff;
 	read_buf[3] = (soc_bat >> 8) & 0xff;
 
-	ret = oplus_i2c_dma_write(the_chip->client, 0x52C4, 4, read_buf);
+	ret = oplus_i2c_dma_write(the_chip->client, REG_STATE, 4, read_buf);
 	if (ret < 0) {
-		chg_err("rk826 write slave ack fail");
+		chg_err("rk826 write REG_STATE ack fail");
 		return -1;
 	}
+	oplus_i2c_dma_read(the_chip->client, REG_SLAVE, 4, current_buf);
+	chg_err("kilody read 0x52CC :current_buf[0]=0x%x,current_buf[1]=0x%x,current_buf[2]=0x%x,current_buf[3]=0x%x,\n",
+			current_buf[0],current_buf[1], current_buf[2], current_buf[3]);
 	return 0;
 }
 
@@ -1211,16 +1354,28 @@ void rk826_update_temperature_soc(void)
 	int temp = 0;
 	int soc = 0;
 
-	soc = oplus_gauge_get_batt_soc();
-	temp = oplus_chg_match_temp_for_chging();
-	rk826_set_battery_temperature_soc(temp, soc);
+	if (!the_chip->vooc_is_platform_gauge){
+		chg_err("not support platform gauge vooc\n");
+		return;
+	}
 
-	chg_err("kilody in! soc = %d,temp = %d,chging = %d\n", soc, temp, oplus_vooc_get_fastchg_ing());
+	if (oplus_chg_get_chging_status()) {
+		soc = oplus_gauge_get_batt_soc();
+		temp = oplus_chg_match_temp_for_chging();
+		rk826_get_battery_mvolts_current();
+		rk826_set_battery_temperature_soc(temp,soc);
+	}else{
+		the_bat.uv_bat = 0;
+		the_bat.current_bat = 0;
+	}
+	chg_err("kilody in! soc = %d,temp = %d,uv_bat = %d,current_bat = %d,chging = %d\n",
+			soc,temp,the_bat.uv_bat,the_bat.current_bat,oplus_vooc_get_fastchg_ing());
 }
 
 struct oplus_vooc_operations oplus_rk826_ops = {
 	.fw_update = rk826_fw_update,
 	.fw_check_then_recover = rk826_fw_check_then_recover,
+	.fw_check_then_recover_fix = rk826_fw_check_then_recover_fix,
 	.set_switch_mode = opchg_set_switch_mode,
 	.eint_regist = oplus_vooc_eint_register,
 	.eint_unregist = oplus_vooc_eint_unregister,
@@ -1234,8 +1389,8 @@ struct oplus_vooc_operations oplus_rk826_ops = {
 	.reply_mcu_data_4bits = opchg_reply_mcu_data_4bits,
 	.reset_fastchg_after_usbout = reset_fastchg_after_usbout,
 	.switch_fast_chg = switch_fast_chg,
-	.reset_mcu = opchg_set_reset_active,
-	.set_mcu_sleep = opchg_set_reset_sleep,
+	.reset_mcu = rk826_set_reset_active,
+	.set_mcu_sleep = rk826_set_reset_sleep,
 	.set_vooc_chargerid_switch_val = opchg_set_vooc_chargerid_switch_val,
 	.is_power_off_charging = oplus_is_power_off_charging,
 	.get_reset_gpio_val = oplus_vooc_get_reset_gpio_val,
@@ -1245,7 +1400,57 @@ struct oplus_vooc_operations oplus_rk826_ops = {
 	.get_clk_gpio_num = opchg_get_clk_gpio_num,
 	.get_data_gpio_num = opchg_get_data_gpio_num,
 	.update_temperature_soc = rk826_update_temperature_soc,
+	.check_asic_fw_status = rk826_asic_fw_status,
+
 };
+struct oplus_plat_gauge_operations oplus_rk826_plat_ops = {
+	.get_plat_battery_mvolts = rk826_get_prev_battery_mvolts,
+	.get_plat_battery_current = rk826_get_prev_battery_current,
+};
+int rk826_get_battery_mvolts_current(void)
+{
+	int ret = 0;
+	int uv_bat;
+	int current_bat;
+	static int asic_err = 0;
+	u8 read_buf[4] = {0};
+
+	ret = oplus_i2c_dma_read(the_chip->client, REG_SYS0, 4, read_buf);
+	if (ret < 0) {
+		chg_err("rk826 read slave ack fail");
+		the_bat.uv_bat = 0;
+		return -1;
+	}
+	chg_err("kilody read 0x52C0 :read_buf[0]=0x%x,read_buf[1]=0x%x,read_buf[2]=0x%x,read_buf[3]=0x%x,\n",
+			read_buf[0],read_buf[1], read_buf[2], read_buf[3]);
+	uv_bat = (read_buf[3] << 8) | read_buf[2];
+	ret = oplus_i2c_dma_read(the_chip->client, REG_HOST, 4, read_buf);
+	if (ret < 0) {
+		chg_err("rk826 read slave ack fail");
+		the_bat.current_bat = 0;
+		return -1;
+	}
+	chg_err("kilody read 0x52C8 :read_buf[0]=0x%x,read_buf[1]=0x%x,read_buf[2]=0x%x,read_buf[3]=0x%x,\n",
+			read_buf[0],read_buf[1], read_buf[2], read_buf[3]);
+	current_bat = (read_buf[3] << 24) | (read_buf[2] << 16) | (read_buf[1] << 8) | read_buf[0];
+	if((uv_bat != 0)&&(uv_bat != 0xffff)){
+		if((the_bat.uv_bat == 0 ) || ((abs(uv_bat - the_bat.uv_bat)) < 500)) {
+			the_bat.uv_bat = uv_bat;
+			the_bat.current_bat = current_bat;
+			asic_err = 0;
+		} else {
+			asic_err ++;
+			chg_err("rk826 read uvbat err,uv_bat=%d,the_bat.uv_bat=%d\n",uv_bat,the_bat.uv_bat);
+			if(asic_err > 5) {
+				the_bat.uv_bat = uv_bat;
+				asic_err = 0;
+				chg_err("rk826 read uvbat err 5 times,uv_bat=%d,the_bat.uv_bat=%d\n",uv_bat,the_bat.uv_bat);
+				return -1;
+			}
+		}
+	}
+	return 0;
+}
 
 static void register_vooc_devinfo(void)
 {
@@ -1260,6 +1465,101 @@ static void register_vooc_devinfo(void)
 	if (ret) {
 		chg_err(" fail\n");
 	}
+}
+
+/* Jiaoyang@CM.BSP.CHG 2020/10/17 add for sala_A SVOOC charging */
+static int get_hwpcb_version(void)
+{
+	int pcb;
+
+	pcb = get_PCB_Version();
+	printk("pcb version is %d\n",pcb);
+	if(pcb > 4) //pcb version 4 is evt1
+		return 1;
+	else
+		return 0;
+}
+
+static int rk826_parse_fw_from_dt(struct oplus_vooc_chip *chip)
+{
+	struct device_node *node = chip->dev->of_node;
+	const char *data;
+	int len = 0;
+
+	if (!node) {
+		pr_err("device tree info. missing\n");
+		return -ENOMEM;
+	}
+
+	data = of_get_property(node, "vooc,firmware_data", &len);
+	if (!data) {
+		pr_err("%s: parse vooc fw failed\n", __func__);
+		return -ENOMEM;
+	}
+
+	chip->firmware_data = data;
+	chip->fw_data_count = len;
+	chip->fw_data_version = data[len - 4];
+	pr_err("%s: version: 0x%x, count: %d\n", __func__, chip->fw_data_version, chip->fw_data_count);
+
+	return 0;
+}
+
+static int rk826_parse_fw_from_array(struct oplus_vooc_chip *chip)
+{
+	if (chip->batt_type_4400mv) {
+		chip->firmware_data = rk826_fw_data_4400_vooc_ffc_15c;
+		chip->fw_data_count = sizeof(rk826_fw_data_4400_vooc_ffc_15c);
+		chip->fw_data_version = rk826_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
+	} else {
+		chip->firmware_data = rk826_fw_data_4400_vooc_ffc_15c;
+		chip->fw_data_count = sizeof(rk826_fw_data_4400_vooc_ffc_15c);
+		chip->fw_data_version = rk826_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
+	}
+
+	if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4400_VOOC_FFC_15C) {
+		chip->firmware_data = rk826_fw_data_4400_vooc_ffc_15c;
+		chip->fw_data_count = sizeof(rk826_fw_data_4400_vooc_ffc_15c);
+		chip->fw_data_version = rk826_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_VOOC_FFC_5V6A_4BIT) {
+		chip->firmware_data = rk826_fw_data_4450_vooc_ffc_5v6a_4bit;
+		chip->fw_data_count = sizeof(rk826_fw_data_4450_vooc_ffc_5v6a_4bit);
+		chip->fw_data_version = rk826_fw_data_4450_vooc_ffc_5v6a_4bit[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_5V6A_CHAKA) {
+		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_5v6a_chaka;
+		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_5v6a_chaka);
+		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_5v6a_chaka[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_6300MA_HIMA) {
+		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_6300mA_hima;
+		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_6300mA_hima);
+		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_6300mA_hima[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_6300MA_HOREE) {
+		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_6300mA_horee;
+		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_6300mA_horee);
+		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_6300mA_horee[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_6300MA && !get_hwpcb_version()) {
+		chip->firmware_data = rk826_fw_data_4450_svooc_6300ma;
+		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_6300ma);
+		chip->fw_data_version = rk826_fw_data_4450_svooc_6300ma[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_6300MA && get_hwpcb_version()) {
+		chip->firmware_data = rk826_fw_data_4450_svooc_evt2_4500ma;
+		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_evt2_4500ma);
+		chip->fw_data_version = rk826_fw_data_4450_svooc_evt2_4500ma[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_5V6A_DALI) {
+		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_5v6a_dali;
+		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_5v6a_dali);
+		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_5v6a_dali[chip->fw_data_count - 4];
+	}  else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_6300MA_LEMON) {
+        chip->firmware_data = rk826_fw_data_4450_svooc_ffc_6300mA_lemon;
+        chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_6300mA_lemon);
+        chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_6300mA_lemon[chip->fw_data_count - 4];
+	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_5V6A_WALLE) {
+        chip->firmware_data = rk826_fw_data_4450_svooc_ffc_5v6a_walle;
+        chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_5v6a_walle);
+        chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_5v6a_walle[chip->fw_data_count - 4];
+	}
+
+	return 0;
 }
 
 static void rk826_shutdown(struct i2c_client *client)
@@ -1302,10 +1602,17 @@ static ssize_t vooc_fw_check_read(struct file *filp, char __user *buff, size_t c
 	return (len < count ? len : count);
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 static const struct file_operations vooc_fw_check_proc_fops = {
 	.read = vooc_fw_check_read,
 	.llseek = noop_llseek,
 };
+#else
+static const struct proc_ops vooc_fw_check_proc_fops = {
+	.proc_read = vooc_fw_check_read,
+	.proc_lseek = noop_llseek,
+};
+#endif
 
 static int init_proc_vooc_fw_check(void)
 {
@@ -1318,16 +1625,117 @@ static int init_proc_vooc_fw_check(void)
 	return 0;
 }
 
-static int get_hwpcb_version(void)
+static ssize_t rk826_current_read(struct file *filp, char __user *buff, size_t count, loff_t *off)
 {
-	int pcb;
+	char page[256] = {0};
+	int len = 0;
+	int current_temp;
 
-	pcb = get_PCB_Version();
-	printk("pcb version is %d\n",pcb);
-	if(pcb > 4) //pcb version 4 is evt1
-		return 1;
-	else
+	current_temp = the_bat.current_bat;
+	current_temp = current_temp / 1000;
+	len = sprintf(page, "%d", current_temp);
+	if (len > *off) {
+		len -= *off;
+	} else {
+		len = 0;
+	}
+	if (copy_to_user(buff, page, (len < count ? len : count))) {
+		return -EFAULT;
+	}
+	*off += len < count ? len : count;
+	return (len < count ? len : count);
+}
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
+static const struct file_operations rk826_current_proc_fops = {
+	.read = rk826_current_read,
+	.llseek = noop_llseek,
+};
+#else
+static const struct proc_ops rk826_current_proc_fops = {
+	.proc_read = rk826_current_read,
+	.proc_lseek = noop_llseek,
+};
+#endif
+static int init_proc_rk826_current(void)
+{
+	struct proc_dir_entry *p = NULL;
+
+	p = proc_create("rk826_current", 0444, NULL, &rk826_current_proc_fops);
+	if (!p) {
+		chg_err("proc_create rk826_current fail!\n");
+	}
+	return 0;
+}
+
+static void rk826_update_battery_temperature_soc(struct work_struct *work)
+{
+	int temp = 0;
+	int soc = 0;
+
+	if (oplus_chg_get_chging_status()) {
+		soc = oplus_gauge_get_batt_soc();
+		temp = oplus_chg_match_temp_for_chging();
+		rk826_get_battery_mvolts_current();
+		rk826_set_battery_temperature_soc(temp,soc);
+	}else{
+		the_bat.uv_bat = 0;
+		the_bat.current_bat = 0;
+	}
+	chg_err("kilody in! soc = %d,temp = %d,uv_bat = %d,current_bat = %d,chging = %d\n",
+			soc,temp,the_bat.uv_bat,the_bat.current_bat,oplus_vooc_get_fastchg_ing());
+	schedule_delayed_work(&rk826_update_temp_soc, round_jiffies_relative(msecs_to_jiffies(400)));
+}
+
+static int rk826_get_prev_battery_mvolts(void)
+{
+	if (the_bat.reset_status == 0) {
+		chg_debug("rk826 reset sleep, cannot read volts\n");
 		return 0;
+	}
+	if (the_chip->mcu_update_ing) {
+		chg_debug("mcu_update_ing:%d,return\n", the_chip->mcu_update_ing);
+		return 0;
+	}
+	if (oplus_vooc_get_fastchg_started() != true) {
+		rk826_get_battery_mvolts_current();
+	}
+	return the_bat.uv_bat;
+}
+
+static int rk826_get_prev_battery_current(void)
+{
+	if (the_bat.reset_status == 0) {
+		chg_debug("rk826 reset sleep, cannot read volts\n");
+		return 0;
+	}
+	if (the_chip->mcu_update_ing) {
+		chg_debug("mcu_update_ing:%d,return\n", the_chip->mcu_update_ing);
+		return 0;
+	}
+	return -the_bat.current_bat/1000;
+}
+
+static void rk826_update_work_init(void)
+{
+	INIT_DELAYED_WORK(&rk826_update_temp_soc, rk826_update_battery_temperature_soc);
+	//schedule_delayed_work(&rk826_update_temp_soc, round_jiffies_relative(msecs_to_jiffies(400)));
+}
+
+void rk826_set_reset_active(struct oplus_vooc_chip *chip)
+{
+	the_bat.uv_bat = 0;
+	the_bat.current_bat = 0;
+	opchg_set_reset_active(chip);
+	the_bat.reset_status = 1;
+}
+
+void rk826_set_reset_sleep(struct oplus_vooc_chip *chip)
+{
+	the_bat.uv_bat = 0;
+	the_bat.current_bat = 0;
+	opchg_set_reset_sleep(chip);
+	the_bat.reset_status = 0;
 }
 
 static int rk826_driver_probe(struct i2c_client *client, const struct i2c_device_id *id)
@@ -1366,57 +1774,11 @@ static int rk826_driver_probe(struct i2c_client *client, const struct i2c_device
 	mutex_init(&chip->pinctrl_mutex);
 
 	oplus_vooc_fw_type_dt(chip);
-	if (chip->batt_type_4400mv) {
-		chip->firmware_data = rk826_fw_data_4400_vooc_ffc_15c;
-		chip->fw_data_count = sizeof(rk826_fw_data_4400_vooc_ffc_15c);
-		chip->fw_data_version = rk826_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
-	} else {//default
-		chip->firmware_data = rk826_fw_data_4400_vooc_ffc_15c;
-		chip->fw_data_count = sizeof(rk826_fw_data_4400_vooc_ffc_15c);
-		chip->fw_data_version = rk826_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
-	}
 
-	if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4400_VOOC_FFC_15C) {
-		chip->firmware_data = rk826_fw_data_4400_vooc_ffc_15c;
-		chip->fw_data_count = sizeof(rk826_fw_data_4400_vooc_ffc_15c);
-		chip->fw_data_version = rk826_fw_data_4400_vooc_ffc_15c[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_VOOC_FFC_5V6A_4BIT) {
-		chip->firmware_data = rk826_fw_data_4450_vooc_ffc_5v6a_4bit;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_vooc_ffc_5v6a_4bit);
-		chip->fw_data_version = rk826_fw_data_4450_vooc_ffc_5v6a_4bit[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_5V6A_CHAKA) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_5v6a_chaka;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_5v6a_chaka);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_5v6a_chaka[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_6300MA_HIMA) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_6300mA_hima;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_6300mA_hima);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_6300mA_hima[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_6300MA_HOREE) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_6300mA_horee;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_6300mA_horee);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_6300mA_horee[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_6300MA && !get_hwpcb_version()) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_6300ma;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_6300ma);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_6300ma[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_6300MA && get_hwpcb_version()) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_evt2_4500ma;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_evt2_4500ma);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_evt2_4500ma[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_5V6A_DALI) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_5v6a_dali;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_5v6a_dali);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_5v6a_dali[chip->fw_data_count - 4];
-	}  else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_6300MA_LEMON) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_6300mA_lemon;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_6300mA_lemon);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_6300mA_lemon[chip->fw_data_count - 4];
-	} else if (chip->vooc_fw_type == VOOC_FW_TYPE_RK826_4450_SVOOC_FFC_5V6A_WALLE) {
-		chip->firmware_data = rk826_fw_data_4450_svooc_ffc_5v6a_walle;
-		chip->fw_data_count = sizeof(rk826_fw_data_4450_svooc_ffc_5v6a_walle);
-		chip->fw_data_version = rk826_fw_data_4450_svooc_ffc_5v6a_walle[chip->fw_data_count - 4];
-	}
+	if (chip->parse_fw_from_dt)
+		rk826_parse_fw_from_dt(chip);
+	else
+		rk826_parse_fw_from_array(chip);
 
 	chip->vops = &oplus_rk826_ops;
 	chip->fw_mcu_version = 0;
@@ -1424,7 +1786,7 @@ static int rk826_driver_probe(struct i2c_client *client, const struct i2c_device
 	oplus_vooc_gpio_dt_init(chip);
 	opchg_set_clock_sleep(chip);
 	oplus_vooc_delay_reset_mcu_init(chip);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 102))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	rk826_update_wake_lock = wakeup_source_register("rk826_update_wake_lock");
 #else
 	rk826_update_wake_lock = wakeup_source_register(NULL, "rk826_update_wake_lock");
@@ -1436,10 +1798,15 @@ static int rk826_driver_probe(struct i2c_client *client, const struct i2c_device
 	} else {
 		oplus_vooc_fw_update_work_init(chip);
 	}
-
+	rk826_update_work_init();
+	if (chip->vooc_is_platform_gauge) {
+		oplus_plat_gauge_init(&oplus_rk826_plat_ops);
+	}
+	the_bat.reset_status = 0;
 	oplus_vooc_init(chip);
 	register_vooc_devinfo();
 	init_proc_vooc_fw_check();
+	init_proc_rk826_current();
 	the_chip = chip;
 	chg_debug("rk826 success\n");
 	return 0;

@@ -79,7 +79,6 @@ void oplus_set_otg_switch_status(bool value);
 void oplus_wake_up_usbtemp_thread(void);
 //====================================================================//
 #endif /* OPLUS_FEATURE_CHG_BASIC */
-#ifdef OPLUS_FEATURE_CHG_BASIC
 bool oplus_ccdetect_check_is_gpio(struct oplus_chg_chip *chip);
 int oplus_ccdetect_gpio_init(struct oplus_chg_chip *chip);
 void oplus_ccdetect_irq_init(struct oplus_chg_chip *chip);

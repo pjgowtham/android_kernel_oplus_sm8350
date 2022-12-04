@@ -91,8 +91,22 @@ static int __bq25890h_read_reg(struct chip_bq25890h *chip, int reg, int *returnD
     #ifdef 	CONFIG_OPLUS_CHARGER_MTK
     #if defined CONFIG_OPLUS_CHARGER_MTK6763  || defined(CONFIG_OPLUS_CHARGER_MTK6771)
 	int ret = 0;
+	int retry = 3;
 
     ret = i2c_smbus_read_byte_data(chip->client, reg);
+
+	if (ret < 0) {
+		while(retry > 0) {
+			usleep_range(5000, 5000);
+			ret = i2c_smbus_read_byte_data(chip->client, reg);
+			if (ret < 0) {
+				retry--;
+			} else {
+				break;
+			}
+		}
+	}
+
     if (ret < 0) {
         chg_err("i2c read fail: can't read from %02x: %d\n", reg, ret);
         return ret;
@@ -120,8 +134,22 @@ static int __bq25890h_read_reg(struct chip_bq25890h *chip, int reg, int *returnD
 	#endif
     #else
     int ret = 0;
+	int retry = 3;
 
     ret = i2c_smbus_read_byte_data(chip->client, reg);
+
+	if (ret < 0) {
+		while(retry > 0) {
+			usleep_range(5000, 5000);
+			ret = i2c_smbus_read_byte_data(chip->client, reg);
+			if (ret < 0) {
+				retry--;
+			} else {
+				break;
+			}
+		}
+	}
+
     if (ret < 0) {
         chg_err("i2c read fail: can't read from %02x: %d\n", reg, ret);
         return ret;
@@ -148,8 +176,22 @@ static int __bq25890h_write_reg(struct chip_bq25890h *chip, int reg, int val)
     #ifdef CONFIG_OPLUS_CHARGER_MTK
     #if defined CONFIG_OPLUS_CHARGER_MTK6763 || defined(CONFIG_OPLUS_CHARGER_MTK6771)
 	int ret = 0;
+	int retry = 3;
 
     ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+
+	if (ret < 0) {
+		while(retry > 0) {
+			usleep_range(5000, 5000);
+			ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+			if (ret < 0) {
+				retry--;
+			} else {
+				break;
+			}
+		}
+	}
+
     if (ret < 0) {
         chg_err("i2c write fail: can't write %02x to %02x: %d\n",
         val, reg, ret);
@@ -175,8 +217,22 @@ static int __bq25890h_write_reg(struct chip_bq25890h *chip, int reg, int val)
 	#endif
 	#else /* CONFIG_OPLUS_CHARGER_MTK */
     int ret = 0;
+	int retry = 3;
 
     ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+
+	if (ret < 0) {
+		while(retry > 0) {
+			usleep_range(5000, 5000);
+			ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+			if (ret < 0) {
+				retry--;
+			} else {
+				break;
+			}
+		}
+	}
+
     if (ret < 0) {
         chg_err("i2c write fail: can't write %02x to %02x: %d\n",
         val, reg, ret);

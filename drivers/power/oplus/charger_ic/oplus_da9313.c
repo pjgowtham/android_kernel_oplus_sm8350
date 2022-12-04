@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2018-2020 Oplus. All rights reserved.
+ * Copyright (C) 2018-2020 . All rights reserved.
  */
 
 #include <linux/interrupt.h>
@@ -29,7 +29,9 @@
 //#include <mt-plat/charging.h>
 #include <mt-plat/charger_type.h>
 #include <soc/oplus/device_info.h>
-
+#include <linux/of.h>
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
 extern void mt_power_off(void); 
 #else
 
@@ -102,8 +104,22 @@ static int __da9313_write_reg(int reg, int val)
 {
     int ret = 0;
     struct chip_da9313 *chip = the_chip;
+	int retry = 3;
 
     ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+
+	if (ret < 0) {
+		while(retry > 0) {
+			usleep_range(5000, 5000);
+			ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+			if (ret < 0) {
+				retry--;
+			} else {
+				break;
+			}
+		}
+	}
+
     if (ret < 0) {
         chg_err("i2c write fail: can't write %02x to %02x: %d\n",
         val, reg, ret);
@@ -143,6 +159,7 @@ static int da9313_config_interface (int RegNum, int val, int MASK)
 {
     int da9313_reg = 0;
     int ret = 0;
+    struct chip_da9313 *divider_ic = the_chip;
 
     mutex_lock(&da9313_i2c_access);
     ret = __da9313_read_reg(RegNum, &da9313_reg);
@@ -151,7 +168,7 @@ static int da9313_config_interface (int RegNum, int val, int MASK)
         da9313_reg &= ~MASK;
         da9313_reg |= val;
 
-        if (RegNum == REG04_DA9313_ADDRESS) {
+        if (RegNum == REG04_DA9313_ADDRESS && divider_ic->hwid == HWID_DA9313) {
             if ((da9313_reg & 0x01) == 0) {
                 chg_err("[REG04_DA9313_ADDRESS] can't write 0 to bit0, da9313_reg[0x%x] bug here\n", da9313_reg);
                 dump_stack();
@@ -214,10 +231,38 @@ static int da9313_work_mode_set(int work_mode)
         return -1;
     }
     chg_err("%s: work_mode [%d]\n", __func__, work_mode);
-    if(work_mode != 0) {
-        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
-    } else {
-        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_FIXED, REG04_DA9313_PVC_MODE_MASK);
+    switch (divider_ic->hwid) {
+    case HWID_DA9313:
+        if(work_mode != 0) {
+            rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
+        } else {
+            rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_FIXED, REG04_DA9313_PVC_MODE_MASK);
+        }
+        break;
+    case HWID_MAX77932:
+        if(work_mode != 0) {
+            rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_MAX77932_PVC_MODE_AUTO, REG04_MAX77932_PVC_MODE_MASK);
+        } else {
+            rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_MAX77932_PVC_MODE_FIXED, REG04_MAX77932_PVC_MODE_MASK);
+        }
+        break;
+    case HWID_MAX77938:
+        if(work_mode != 0) {
+            rc = da9313_config_interface(REG06_MAX77938_ADDRESS, REG04_MAX77938_PVC_MODE_AUTO, REG04_MAX77938_PVC_MODE_MASK);
+        } else {
+            rc = da9313_config_interface(REG06_MAX77938_ADDRESS, REG04_MAX77938_PVC_MODE_FIXED, REG04_MAX77938_PVC_MODE_MASK);
+        }
+        break;
+    case HWID_SD77313:
+        if(work_mode != 0) {
+            rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_SD77313_PVC_MODE_AUTO, REG04_SD77313_PVC_MODE_MASK);
+        } else {
+            rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_SD77313_PVC_MODE_FIXED, REG04_SD77313_PVC_MODE_MASK);
+        }
+        break;
+    default:
+        chg_err("divider_ic->hwid: %d unexpect", divider_ic->hwid);
+        break;
     }
     return rc;
 }
@@ -240,10 +285,205 @@ int da9313_hardware_init(void)
     if (atomic_read(&divider_ic->suspended) == 1) {
         return 0;
     }
-
-    rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
-    return rc;
+	rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
+	da9313_dump_registers();
+	return rc;
 }
+
+int max77932_hardware_init(void)
+{
+	int rc = 0;
+	struct chip_da9313 *divider_ic = the_chip;
+
+	if(divider_ic == NULL) {
+		chg_err("%s: max77932 driver is not ready\n", __func__);
+		return 0;
+	}
+	if (atomic_read(&divider_ic->suspended) == 1) {
+		return 0;
+	}
+	chg_err("max77932 hardware init\n");
+	da9313_config_interface(0x5, (BIT(4) | BIT(5)), (BIT(0) | BIT(4) | BIT(5)));
+	da9313_config_interface(0x6, BIT(5), BIT(5));
+	da9313_config_interface(0x7, BIT(3), BIT(3));
+	da9313_config_interface(0x8, BIT(1), BIT(1));
+	da9313_config_interface(0x9, (BIT(0) | BIT(2)), (BIT(0) | BIT(2)));
+	da9313_dump_registers();
+	return rc;
+}
+
+int max77938_hardware_init(void)
+{
+	int rc = 0;
+	struct chip_da9313 *divider_ic = the_chip;
+
+	if(divider_ic == NULL) {
+		chg_err("%s: max77938 driver is not ready\n", __func__);
+		return 0;
+	}
+	if (atomic_read(&divider_ic->suspended) == 1) {
+		return 0;
+	}
+	chg_err("max77938 hardware init\n");
+	//rc = da9313_config_interface(0x5, 0, (BIT(2) | BIT(1) | BIT(0)));
+	rc = da9313_config_interface(0x8, (BIT(4) | BIT(5)), (BIT(4) | BIT(5)));
+	da9313_dump_registers();
+	return rc;
+}
+
+int sd77313_hardware_init(void)
+{
+	int rc = 0;
+	struct chip_da9313 *divider_ic = the_chip;
+
+	if(divider_ic == NULL) {
+		chg_err("%s: sd77313  driver is not ready\n", __func__);
+		return 0;
+	}
+	if (atomic_read(&divider_ic->suspended) == 1) {
+		return 0;
+	}
+
+	chg_err("sd77313 hardware init\n");
+	//da9313_config_interface(REG04_DA9313_ADDRESS, BIT(3),  BIT(3));
+	//da9313_config_interface(REG0E_DA9313_ADDRESS, (BIT(4) | BIT(5) |  BIT(6)), (BIT(4) | BIT(5) |  BIT(6) | BIT(7)));
+	da9313_dump_registers();
+	return rc;
+}
+
+int read_value_from_reg(int reg_num)
+{
+	int reg_value = 0;
+
+	__da9313_read_reg(reg_num, &reg_value);
+	chg_err("da9313_read_reg reg_num = %d reg_value = %d\n", reg_num, reg_value);
+
+	return reg_value;
+}
+
+static int get_hwid(struct chip_da9313 *chip)
+{
+	int ret = 0;
+	int gpio_state_pull_up = 0;
+	int gpio_state_pull_down = 0;
+
+	if (!chip) {
+		chg_err("[OPLUS_CHG][%s]: chip_mp2650 not ready!\n", __func__);
+		return ret;
+	}
+	chip->hwid = HWID_UNKNOW;
+
+	if (chip->da9313_hwid_gpio <= 0) {
+		chg_err("da9313_hwid_gpio not exist, return\n");
+		ret = read_value_from_reg(REG01_DA9313_ADDRESS);
+		if(ret == HWID_DA9313) {
+			chip->hwid = HWID_DA9313;
+		}
+		if (ret == HWID_SD77313) {
+			chip->hwid = HWID_SD77313;
+		}
+		chg_err("chip->hwid = %d\n", chip->hwid);
+		return chip->hwid;
+	}
+
+	if (IS_ERR_OR_NULL(chip->pinctrl)
+		|| IS_ERR_OR_NULL(chip->da9313_hwid_active)
+		|| IS_ERR_OR_NULL(chip->da9313_hwid_sleep)
+		|| IS_ERR_OR_NULL(chip->da9313_hwid_default)) {
+		chg_err("pinctrl null, return\n");
+		return chip->hwid;
+	}
+
+	pinctrl_select_state(chip->pinctrl, chip->da9313_hwid_active);
+	usleep_range(10000, 10000);
+	gpio_state_pull_up = gpio_get_value(chip->da9313_hwid_gpio);
+	chg_err("gpio_state_pull_up = %d, da9313_hwid_gpio : %d\n", gpio_state_pull_up, chip->da9313_hwid_gpio);
+	pinctrl_select_state(chip->pinctrl, chip->da9313_hwid_sleep);
+	usleep_range(10000, 10000);
+	gpio_state_pull_down = gpio_get_value(chip->da9313_hwid_gpio);
+	chg_err("gpio_state_pull_down = %d, da9313_hwid_gpio : %d\n", gpio_state_pull_down, chip->da9313_hwid_gpio);
+
+	if(gpio_state_pull_up == 0 && gpio_state_pull_down == 0) {
+		ret = read_value_from_reg(REG01_DA9313_ADDRESS);
+		if(ret == HWID_DA9313) {
+			chip->hwid = HWID_DA9313;
+		}
+		if (ret == HWID_SD77313) {
+			chip->hwid = HWID_SD77313;
+		}
+		chg_debug("reg01 value is %d\n",chip->hwid);
+		return chip->hwid;
+	} else if (gpio_state_pull_up == 1 && gpio_state_pull_down == 1) {
+		ret = read_value_from_reg(REG16_DA9313_ADDRESS);
+		if(ret == HWID_MAX77932) {
+			chip->hwid = HWID_MAX77932;
+		}
+		if (ret == HWID_MAX77938) {
+			chip->hwid = HWID_MAX77938;
+		}
+		chg_debug("reg16 value it is %d\n", chip->hwid);
+		return chip->hwid;
+	}
+
+	chg_err("No device id match.\n");
+	return chip->hwid;
+}
+
+static int halfv_chip_init(struct chip_da9313 *chip)
+{
+	int rc = 0;
+	struct device_node *node = chip->dev->of_node;
+	chip->da9313_hwid_gpio = of_get_named_gpio(node, "oplus,da9313-hwid-gpio", 0);
+	if (chip->da9313_hwid_gpio < 0) {
+		pr_err("da9313_hwid_gpio not specified\n");
+		goto HWID_HANDLE;
+	}
+
+	chip->pinctrl = devm_pinctrl_get(chip->dev);
+	if (IS_ERR_OR_NULL(chip->pinctrl)) {
+		chg_err("get da9313 pinctrl fail\n");
+		goto HWID_HANDLE;
+	}
+
+	chip->da9313_hwid_active = pinctrl_lookup_state(chip->pinctrl, "da9313_hwid_active");
+	if (IS_ERR_OR_NULL(chip->da9313_hwid_active)) {
+		chg_err("get da9313_hwid_active fail\n");
+		goto HWID_HANDLE;
+	}
+
+	chip->da9313_hwid_sleep = pinctrl_lookup_state(chip->pinctrl, "da9313_hwid_sleep");
+	if (IS_ERR_OR_NULL(chip->da9313_hwid_sleep)) {
+		chg_err("get da9313_hwid_sleep fail\n");
+		goto HWID_HANDLE;
+	}
+
+	chip->da9313_hwid_default = pinctrl_lookup_state(chip->pinctrl, "da9313_hwid_default");
+	if (IS_ERR_OR_NULL(chip->da9313_hwid_default)) {
+		chg_err("get da9313_hwid_default fail\n");
+		goto HWID_HANDLE;
+	}
+HWID_HANDLE:
+	get_hwid(chip);
+	switch (chip->hwid) {
+	case HWID_DA9313:
+		da9313_hardware_init();
+		break;
+	case HWID_MAX77932:
+		max77932_hardware_init();
+		break;
+	case HWID_MAX77938:
+		max77938_hardware_init();
+		break;
+	case HWID_SD77313:
+		sd77313_hardware_init();
+		break;
+	default:
+		chg_err("No half voltage chip hwid matched!!!\n");
+		break;
+	}
+	return rc;
+}
+
 static ssize_t proc_work_mode_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 {
     uint8_t ret = 0;
@@ -263,8 +503,24 @@ static ssize_t proc_work_mode_read(struct file *file, char __user *buf, size_t c
         return 0;
     }
 
-    ret = da9313_read_reg(REG04_DA9313_ADDRESS, &work_mode);
-    work_mode = ((work_mode & 0x02)? 1:0);
+    switch (divider_ic->hwid) {
+    case HWID_DA9313:
+    case HWID_SD77313:
+        ret = da9313_read_reg(REG04_DA9313_ADDRESS, &work_mode);
+        work_mode = ((work_mode & 0x02)? 1:0);
+        break;
+    case HWID_MAX77932:
+        ret = da9313_read_reg(REG04_DA9313_ADDRESS, &work_mode);
+        work_mode = ((work_mode & 0x01)? 0:1);
+        break;
+    case HWID_MAX77938:
+        ret = da9313_read_reg(REG06_MAX77938_ADDRESS, &work_mode);
+        work_mode = ((work_mode & 0x01)? 0:1);
+        break;
+    default:
+        chg_err("divider_ic->hwid: %d unexpect", divider_ic->hwid);
+        break;
+    }
 
     chg_err("%s: work_mode = %d.\n", __func__, work_mode);
     sprintf(page, "%d", work_mode);
@@ -277,6 +533,7 @@ static ssize_t proc_work_mode_write(struct file *file, const char __user *buf, s
 {
         char buffer[2] = {0};
         int work_mode = 0;
+        int rc = 0;
         struct chip_da9313 *divider_ic = the_chip;
 
         if (divider_ic == NULL) {
@@ -293,9 +550,9 @@ static ssize_t proc_work_mode_write(struct file *file, const char __user *buf, s
                 return -EFAULT;
         }
 
-	if (buffer[0] < '0' || buffer[0] > '9') {
-		return -EINVAL;
-	}
+        if (buffer[0] < '0' || buffer[0] > '9') {
+            return -EINVAL;
+        }
 
         if (1 != sscanf(buffer, "%d", &work_mode)) {
                 chg_err("invalid content: '%s', length = %zd\n", buf, count);
@@ -312,16 +569,120 @@ static ssize_t proc_work_mode_write(struct file *file, const char __user *buf, s
                 divider_ic->fixed_mode_set_by_dev_file = true;
         }
 
-        if (work_mode != 0) {
-                da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
-        } else {
-                da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_FIXED, REG04_DA9313_PVC_MODE_MASK);
+        switch (divider_ic->hwid) {
+        case HWID_DA9313:
+                if(work_mode != 0) {
+                        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
+                } else {
+                        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_FIXED, REG04_DA9313_PVC_MODE_MASK);
+                }
+                break;
+        case HWID_MAX77932:
+                if(work_mode != 0) {
+                        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_MAX77932_PVC_MODE_AUTO, REG04_MAX77932_PVC_MODE_MASK);
+                } else {
+                        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_MAX77932_PVC_MODE_FIXED, REG04_MAX77932_PVC_MODE_MASK);
+                }
+                break;
+        case HWID_MAX77938:
+                if(work_mode != 0) {
+                        rc = da9313_config_interface(REG06_MAX77938_ADDRESS, REG04_MAX77938_PVC_MODE_AUTO, REG04_MAX77938_PVC_MODE_MASK);
+                } else {
+                        rc = da9313_config_interface(REG06_MAX77938_ADDRESS, REG04_MAX77938_PVC_MODE_FIXED, REG04_MAX77938_PVC_MODE_MASK);
+                }
+                break;
+        case HWID_SD77313:
+                if(work_mode != 0) {
+                        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_SD77313_PVC_MODE_AUTO, REG04_SD77313_PVC_MODE_MASK);
+                } else {
+                        rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_SD77313_PVC_MODE_FIXED, REG04_SD77313_PVC_MODE_MASK);
+                }
+                break;
+        default:
+                chg_err("divider_ic->hwid: %d unexpect", divider_ic->hwid);
+                break;
         }
-        chg_err("new work_mode -> %s\n", ((work_mode != 0) ? "auto" : "fixed"));
+
+        chg_err("divider_ic->hwid:%d new work_mode -> %s\n", divider_ic->hwid, ((work_mode != 0) ? "auto" : "fixed"));
 
         return count;
 }
 
+static ssize_t proc_set_reg_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+{
+    uint8_t ret = 0;
+    char page[30];
+    int reg04 = 0;
+    int reg0e = 0;
+    struct chip_da9313 *divider_ic = the_chip;
+
+    if(divider_ic == NULL) {
+        chg_err("%s: da9313 driver is not ready\n", __func__);
+        return 0;
+    }
+    if (atomic_read(&divider_ic->suspended) == 1) {
+        return 0;
+    }
+
+    if (oplus_vooc_get_allow_reading() == false) {
+        return 0;
+    }
+
+    ret = da9313_read_reg(REG04_DA9313_ADDRESS, &reg04);
+    ret = da9313_read_reg(REG0E_DA9313_ADDRESS, &reg0e);
+    //reg04 = ((reg04 & 0x02)? 1:0);
+
+    chg_err("%s: da9313 reg04 = %d,reg0e = %d.\n", __func__, reg04, reg0e);
+    sprintf(page, "reg04 = %d,reg0e = %d\n", reg04,reg0e);
+    ret = simple_read_from_buffer(buf, count, ppos, page, strlen(page));
+
+    return ret;
+}
+
+static ssize_t proc_set_reg_write(struct file *file, const char __user *buf, size_t count, loff_t *lo)
+{
+        char buffer[10] = {0};
+        int reg04 = 0;
+        int reg0e = 0;
+        int ret = 0;
+        struct chip_da9313 *divider_ic = the_chip;
+
+        if (divider_ic == NULL) {
+                chg_err("%s: da9313 driver is not ready\n", __func__);
+                return -ENODEV;
+        }
+
+        if (atomic_read(&divider_ic->suspended) == 1) {
+                return -EBUSY;
+        }
+
+        if (copy_from_user(buffer, buf, 10)) {
+                chg_err("%s: read proc input error.\n", __func__);
+                return -EFAULT;
+        }
+
+        if (!sscanf(buffer, "%x,%x", &reg04,&reg0e)) {
+                chg_err("invalid content: '%s', length = %zd\n", buf, count);
+                return -EFAULT;
+        }
+        chg_err(" da9313 04:%d, 0e:%d \n", reg04, reg0e);
+        if (oplus_vooc_get_allow_reading() == false) {
+                return count;
+        }
+
+        if (reg04 != 0) {
+                divider_ic->fixed_mode_set_by_dev_file = false;
+        } else {
+                divider_ic->fixed_mode_set_by_dev_file = true;
+        }
+
+        mutex_lock(&da9313_i2c_access);
+        ret = __da9313_write_reg(0x04, reg04);
+        ret = __da9313_write_reg(0x0e, reg0e);
+        mutex_unlock(&da9313_i2c_access);
+        return count;
+}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 static const struct file_operations proc_work_mode_ops =
 {
     .read = proc_work_mode_read,
@@ -330,11 +691,35 @@ static const struct file_operations proc_work_mode_ops =
     .owner = THIS_MODULE,
 };
 
+static const struct file_operations proc_set_reg_ops =
+{
+    .read = proc_set_reg_read,
+    .write = proc_set_reg_write,
+    .open  = simple_open,
+    .owner = THIS_MODULE,
+};
+
+#else
+static const struct proc_ops proc_work_mode_ops =
+{
+    .proc_read = proc_work_mode_read,
+    .proc_write  = proc_work_mode_write,
+    .proc_open  = simple_open,
+};
+static const struct proc_ops proc_set_reg_ops =
+{
+    .proc_read = proc_set_reg_read,
+    .proc_write = proc_set_reg_write,
+    .proc_open  = simple_open,
+};
+#endif
+
 static int init_da9313_proc(struct chip_da9313 *da)
 {
     int ret = 0;
     struct proc_dir_entry *prEntry_da = NULL;
     struct proc_dir_entry *prEntry_tmp = NULL;
+    struct proc_dir_entry *prEntry_set_reg = NULL;
 
     prEntry_da = proc_mkdir("da9313", NULL);
     if (prEntry_da == NULL) {
@@ -346,6 +731,11 @@ static int init_da9313_proc(struct chip_da9313 *da)
     if (prEntry_tmp == NULL) {
         ret = -ENOMEM;
         chg_debug("%s: Couldn't create proc entry, %d\n", __func__, __LINE__);
+    }
+    prEntry_set_reg = proc_create_data("set_reg", 0644, prEntry_da, &proc_set_reg_ops, da);
+    if (prEntry_set_reg == NULL) {
+        ret = -ENOMEM;
+        chg_err("%s: Couldn't create proc entry, %d\n", __func__, __LINE__);
     }
     return 0;
 }
@@ -365,7 +755,7 @@ static int da9313_driver_probe(struct i2c_client *client, const struct i2c_devic
     divider_ic->dev = &client->dev;
     the_chip = divider_ic;
     divider_ic->fixed_mode_set_by_dev_file = false;
-
+    halfv_chip_init(divider_ic);
     da9313_dump_registers();
 
     da9313_hardware_init();
@@ -439,9 +829,28 @@ static void da9313_shutdown(struct i2c_client *client)
     if (atomic_read(&divider_ic->suspended) == 1) {
         return ;
     }
-
-    rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
-
+    switch (divider_ic->hwid) {
+        case HWID_DA9313:
+            rc = da9313_config_interface(REG04_DA9313_ADDRESS, REG04_DA9313_PVC_MODE_AUTO, REG04_DA9313_PVC_MODE_MASK);
+            break;
+        case HWID_MAX77932:
+            da9313_config_interface(0x5, (BIT(4) | BIT(5)), (BIT(0) | BIT(4) | BIT(5)));
+            da9313_config_interface(0x6, BIT(5), BIT(5));
+            da9313_config_interface(0x7, BIT(3), BIT(3));
+            da9313_config_interface(0x8, BIT(1), BIT(1));
+            da9313_config_interface(0x9, (BIT(0) | BIT(2)), (BIT(0) | BIT(2)));
+            break;
+        case HWID_MAX77938:
+            rc = da9313_config_interface(0x8, (BIT(4) | BIT(5)), (BIT(4) | BIT(5)));
+            break;
+        case HWID_SD77313:
+            //da9313_config_interface(REG04_DA9313_ADDRESS, BIT(3),  BIT(3));
+            //da9313_config_interface(REG0E_DA9313_ADDRESS, (BIT(4) | BIT(5) |  BIT(6)), (BIT(4) | BIT(5) |  BIT(6) | BIT(7)));
+            break;
+        default:
+            chg_err("No half voltage chip hwid matched!!!\n");
+            break;
+    }
     return ;
 }
 

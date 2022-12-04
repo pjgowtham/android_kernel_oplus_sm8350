@@ -99,9 +99,23 @@ extern int oplus_battery_meter_get_battery_voltage(void);
 static int smb1351_read_reg(struct smb1351_charger *chip, int reg, u8 *val)
 {
 	s32 ret;
+	int retry = 3;
 
 	pm_stay_awake(chip->dev);
 	ret = i2c_smbus_read_byte_data(chip->client, reg);
+
+	if (ret < 0) {
+		while(retry > 0) {
+			usleep_range(5000, 5000);
+			ret = i2c_smbus_read_byte_data(chip->client, reg);
+			if (ret < 0) {
+				retry--;
+			} else {
+				break;
+			}
+		}
+	}
+
 	if (ret < 0) {
 		pr_err("i2c read fail: can't read from %02x: %d\n", reg, ret);
 		pm_relax(chip->dev);
@@ -117,9 +131,23 @@ static int smb1351_read_reg(struct smb1351_charger *chip, int reg, u8 *val)
 static int smb1351_write_reg(struct smb1351_charger *chip, int reg, u8 val)
 {
 	s32 ret;
+	int retry = 3;
 
 	pm_stay_awake(chip->dev);
 	ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+
+	if (ret < 0) {
+		while(retry > 0) {
+			usleep_range(5000, 5000);
+			ret = i2c_smbus_write_byte_data(chip->client, reg, val);
+			if (ret < 0) {
+				retry--;
+			} else {
+				break;
+			}
+		}
+	}
+
 	if (ret < 0) {
 		pr_err("i2c write fail: can't write %02x to %02x: %d\n",
 			val, reg, ret);

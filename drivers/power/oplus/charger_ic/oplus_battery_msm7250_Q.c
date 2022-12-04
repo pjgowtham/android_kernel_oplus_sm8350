@@ -4782,7 +4782,6 @@ int smblib_set_prop_typec_power_role(struct smb_charger *chg,
 {
 	int rc = 0;
 	u8 power_role;
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	u8 stat;
 	int level = 0;
 	struct oplus_chg_chip *chip = g_oplus_chip;
@@ -4857,7 +4856,6 @@ int smblib_set_prop_typec_power_role(struct smb_charger *chg,
 		return -EINVAL;
 	}
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	rc = smblib_read(chg, TYPE_C_STATE_MACHINE_STATUS_REG, &stat);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't read TYPE_C_STATE_MACHINE_STATUS_REG rc=%d\n",rc);
@@ -6320,7 +6318,6 @@ static bool smblib_src_lpd(struct smb_charger *chg)
 	u8 stat;
 	int rc;
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
        if (chg->lpd_disabled)
 		return false;
 #endif
@@ -6629,7 +6626,6 @@ static void smblib_handle_rp_change(struct smb_charger *chg, int typec_mode)
 }
 
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 static void smblib_lpd_launch_ra_open_work(struct smb_charger *chg)
 {
 	u8 stat;
@@ -6694,7 +6690,6 @@ irqreturn_t typec_or_rid_detection_change_irq_handler(int irq, void *data)
 
 	if (chg->pr_swap_in_progress || chg->pd_hard_reset)
 		goto out;
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	smblib_lpd_launch_ra_open_work(chg);
 #else
 	rc = smblib_read(chg, TYPE_C_MISC_STATUS_REG, &stat);
@@ -6720,7 +6715,6 @@ out:
 	return IRQ_HANDLED;
 }
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 
 static void oplus_otg_disable_config(void)
 {
@@ -6736,7 +6730,6 @@ static void oplus_otg_disable_config(void)
 	}
 	chg = &chip->pmic_spmi.smb5_chip->chg;
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	/* set sink mode only */
 	rc = smblib_masked_write(chg, TYPE_C_MODE_CFG_REG,
 			TYPEC_POWER_ROLE_CMD_MASK | TYPEC_TRY_MODE_MASK, EN_SNK_ONLY_BIT);//bit[4:0]=0x02
@@ -7501,7 +7494,6 @@ int smblib_set_prop_pr_swap_in_progress(struct smb_charger *chg,
 {
 	int rc;
 	u8 stat = 0, orientation;
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	u8 reg_val = 0;
 	int level = 0;
 	struct oplus_chg_chip *chip = g_oplus_chip;
@@ -7557,7 +7549,6 @@ int smblib_set_prop_pr_swap_in_progress(struct smb_charger *chg,
 			return rc;
 		}
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 		rc = smblib_read(chg, TYPE_C_STATE_MACHINE_STATUS_REG, &stat);
 		if (rc < 0) {
 			smblib_err(chg, "Couldn't read TYPE_C_STATE_MACHINE_STATUS_REG rc=%d\n",rc);
@@ -9494,7 +9485,6 @@ void oplus_ccdetect_disable(void)
 	if (oplus_ccdetect_check_is_gpio(chip) != true)
 		return;
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	/* set sink mode only */
 	rc = smblib_masked_write(chg, TYPE_C_MODE_CFG_REG,
 			TYPEC_POWER_ROLE_CMD_MASK | TYPEC_TRY_MODE_MASK, EN_SNK_ONLY_BIT);//bit[4:0]=0x02
@@ -13090,7 +13080,6 @@ static int smb5_init_hw(struct smb5 *chip)
 {
 	struct smb_charger *chg = &chip->chg;
 	int rc;
-#ifndef OPLUS_FEATURE_CHG_BASIC
 	u8 val = 0, mask = 0;
 #else
 	u8 val = 0;

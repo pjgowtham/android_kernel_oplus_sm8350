@@ -580,10 +580,17 @@ static ssize_t vooc_fw_check_read(struct file *filp, char __user *buff, size_t c
 	return (len < count ? len : count);
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 static const struct file_operations vooc_fw_check_proc_fops = {
 	.read = vooc_fw_check_read,
 	.llseek = noop_llseek,
 };
+#else
+static const struct proc_ops vooc_fw_check_proc_fops = {
+	.proc_read = vooc_fw_check_read,
+	.proc_lseek = noop_llseek,
+};
+#endif
 
 static int init_proc_vooc_fw_check(void)
 {

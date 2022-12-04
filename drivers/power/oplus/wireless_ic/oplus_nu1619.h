@@ -172,6 +172,7 @@ struct oplus_nu1619_ic{
 	int booster_en_gpio;
 	int ext1_wired_otg_en_gpio;
 	int ext2_wireless_otg_en_gpio;
+	int ext3_wireless_otg_en_gpio;
 	int cp_ldo_5v_gpio;
 	int wrx_en_gpio;
 	int wrx_otg_en_gpio;
@@ -202,6 +203,9 @@ struct oplus_nu1619_ic{
 	struct pinctrl_state *ext2_wireless_otg_en_active;
 	struct pinctrl_state *ext2_wireless_otg_en_sleep;
 	struct pinctrl_state *ext2_wireless_otg_en_default;
+	struct pinctrl_state *ext3_wireless_otg_en_active;
+	struct pinctrl_state *ext3_wireless_otg_en_sleep;
+	struct pinctrl_state *ext3_wireless_otg_en_default;
 	struct pinctrl_state *cp_ldo_5v_active;
 	struct pinctrl_state *cp_ldo_5v_sleep;
 	struct pinctrl_state *cp_ldo_5v_default;
@@ -231,6 +235,18 @@ struct oplus_nu1619_ic{
 /*int         batt_volt_2cell_min;*/
 	atomic_t suspended;
 	atomic_t volt_low_flag;
+	const char *fw_boot_data;
+	const char *fw_rx_data;
+	const char *fw_tx_data;
+	int fw_boot_lenth;
+	int fw_rx_lenth;
+	int fw_tx_lenth;
+	u32 fw_boot_version;
+	u32 fw_rx_version;
+	u32 fw_tx_version;
+	struct delayed_work status_keep_clean_work;
+	struct wakeup_source *status_wake_lock;
+	bool status_wake_lock_on;
 };
 
 struct target_ichg_table {
@@ -258,6 +274,7 @@ bool nu1619_firmware_is_updating(void);
 void nu1619_set_ext1_wired_otg_en_val(int value);
 int nu1619_get_ext1_wired_otg_en_val(void);
 void nu1619_set_ext2_wireless_otg_en_val(int value);
+void nu1619_set_ext3_wireless_otg_en_val(int value);
 int nu1619_get_ext2_wireless_otg_en_val(void);
 void nu1619_set_cp_ldo_5v_val(int value);
 int nu1619_get_cp_ldo_5v_val(void);

@@ -4371,7 +4371,6 @@ int smblib_set_prop_typec_power_role(struct smb_charger *chg,
 {
 	int rc = 0;
 	u8 power_role;
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	u8 stat = 0;
 	int level = 0;
 	struct oplus_chg_chip *chip = g_oplus_chip;
@@ -4398,7 +4397,6 @@ int smblib_set_prop_typec_power_role(struct smb_charger *chg,
 		return -EINVAL;
 	}
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	rc = smblib_read(chg, TYPE_C_STATE_MACHINE_STATUS_REG, &stat);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't read TYPE_C_STATE_MACHINE_STATUS_REG rc=%d\n",rc);
@@ -5790,7 +5788,6 @@ static bool smblib_src_lpd(struct smb_charger *chg)
 	u8 stat;
 	int rc;
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
        if (chg->lpd_disabled)
 		return false;
 #endif
@@ -6087,7 +6084,6 @@ static void smblib_handle_rp_change(struct smb_charger *chg, int typec_mode)
 }
 
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 static void smblib_lpd_launch_ra_open_work(struct smb_charger *chg)
 {
 	u8 stat;
@@ -6152,7 +6148,6 @@ irqreturn_t typec_or_rid_detection_change_irq_handler(int irq, void *data)
 
 	if (chg->pr_swap_in_progress || chg->pd_hard_reset)
 		goto out;
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	smblib_lpd_launch_ra_open_work(chg);
 #else
 	rc = smblib_read(chg, TYPE_C_MISC_STATUS_REG, &stat);
@@ -6275,7 +6270,6 @@ irqreturn_t typec_attach_detach_irq_handler(int irq, void *data)
 	}
 
 	if (stat & TYPEC_ATTACH_DETACH_STATE_BIT) {
-#ifdef OPLUS_FEATURE_CHG_BASIC
 		smblib_lpd_clear_ra_open_work(chg);
 #else
 		cancel_delayed_work_sync(&chg->lpd_detach_work);
@@ -6636,7 +6630,6 @@ int smblib_set_prop_pr_swap_in_progress(struct smb_charger *chg,
 {
 	int rc;
 	u8 stat, orientation;
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	u8 reg_val = 0;
 	int level = 0;
 	struct oplus_chg_chip *chip = g_oplus_chip;
@@ -6682,7 +6675,6 @@ int smblib_set_prop_pr_swap_in_progress(struct smb_charger *chg,
 				rc);
 		}
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 		rc = smblib_read(chg, TYPE_C_STATE_MACHINE_STATUS_REG, &stat);
 		if (rc < 0) {
 			smblib_err(chg, "Couldn't read TYPE_C_STATE_MACHINE_STATUS_REG rc=%d\n",rc);
@@ -8523,7 +8515,6 @@ void oplus_ccdetect_disable(void)
 	if (oplus_ccdetect_check_is_gpio(chip) != true)
 		return;
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	/* set sink mode only */
 	rc = smblib_masked_write(chg, TYPE_C_MODE_CFG_REG,
 			TYPEC_POWER_ROLE_CMD_MASK | TYPEC_TRY_MODE_MASK, EN_SNK_ONLY_BIT);//bit[4:0]=0x02
@@ -8553,7 +8544,6 @@ static void oplus_otg_disable_config(void)
 	}
 	chg = &chip->pmic_spmi.smb5_chip->chg;
 
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	/* set sink mode only */
 	rc = smblib_masked_write(chg, TYPE_C_MODE_CFG_REG,
 			TYPEC_POWER_ROLE_CMD_MASK | TYPEC_TRY_MODE_MASK, EN_SNK_ONLY_BIT);//bit[4:0]=0x02
@@ -9345,7 +9335,6 @@ static int smb5_parse_dt(struct smb5 *chip)
 
 	of_property_read_u32(node, "qcom,sec-charger-config",
 					&chip->dt.sec_charger_config);
-#ifdef OPLUS_FEATURE_CHG_BASIC
        chg->lpd_disabled = of_property_read_bool(node, "qcom,lpd-disable");
 #endif
 	chg->sec_cp_present =
@@ -11247,7 +11236,6 @@ static int smb5_configure_typec(struct smb_charger *chg)
 			"Couldn't configure Type-C interrupts rc=%d\n", rc);
 		return rc;
 	}
-#ifdef OPLUS_FEATURE_CHG_BASIC
         val = chg->lpd_disabled ? 0 : TYPEC_WATER_DETECTION_INT_EN_BIT;
 	/* Use simple write to enable only required interrupts */
 	rc = smblib_write(chg, TYPE_C_INTERRUPT_EN_CFG_2_REG,
@@ -11299,7 +11287,6 @@ static int smb5_configure_typec(struct smb_charger *chg)
 	rc = smblib_masked_write(chg, USBIN_LOAD_CFG_REG,
 		USBIN_IN_COLLAPSE_GF_SEL_MASK | USBIN_AICL_STEP_TIMING_SEL_MASK,
 		0);
-#ifdef OPLUS_FEATURE_CHG_BASIC
 	if (rc < 0)
 	{
 		dev_err(chg->dev,
@@ -13708,7 +13695,7 @@ int oplus_chg_set_qc_config()
 
 	return ret;
 }
-bool oplus_sm8150_get_pd_type(void)
+int oplus_sm8150_get_pd_type(void)
 {
 	struct smb_charger *chg = NULL;
 
