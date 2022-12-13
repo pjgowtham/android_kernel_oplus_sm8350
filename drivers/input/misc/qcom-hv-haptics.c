@@ -2079,6 +2079,9 @@ static int haptics_load_custom_effect(struct haptics_chip *chip,
 	struct custom_fifo_data custom_data = {};
 	struct fifo_cfg *fifo;
 	int rc;
+	char *str;
+	u32 size, pos;
+	int i, j;
 
 	if (!chip->custom_effect || !chip->custom_effect->fifo)
 		return -ENOMEM;
@@ -2133,6 +2136,19 @@ static int haptics_load_custom_effect(struct haptics_chip *chip,
 	fifo->num_s = custom_data.length;
 	fifo->play_length_us = get_fifo_play_length_us(fifo,
 			chip->custom_effect->t_lra_us);
+
+			size = fifo->num_s * CHAR_PER_SAMPLE
+							+ CHAR_MSG_HEADER;
+			str = kzalloc(size, GFP_KERNEL);
+
+			pos = 0;
+			pos += scnprintf(str, size, "%s", "FIFO data: ");
+			for (j = 0; j < fifo->num_s; j++)
+				pos += scnprintf(str + pos, size - pos, "%d ",
+						(s8)fifo->samples[j]);
+
+			dev_dbg(chip->dev, "%s\n", str);
+			kfree(str);
 
 	if (chip->play.in_calibration) {
 		dev_err(chip->dev, "calibration in progress, ignore playing custom effect\n");
