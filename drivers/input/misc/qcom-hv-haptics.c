@@ -2137,6 +2137,9 @@ static int haptics_load_custom_effect(struct haptics_chip *chip,
 	fifo->play_length_us = get_fifo_play_length_us(fifo,
 			chip->custom_effect->t_lra_us);
 
+			dev_dbg(chip->dev, "Custom FIFO data play length: %dus\n",
+					fifo->play_length_us);
+
 			size = fifo->num_s * CHAR_PER_SAMPLE
 							+ CHAR_MSG_HEADER;
 			str = kzalloc(size, GFP_KERNEL);
