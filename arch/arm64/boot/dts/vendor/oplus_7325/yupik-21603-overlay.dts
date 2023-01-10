@@ -10,4 +10,5 @@
 	compatible = "qcom,yupik-idp", "qcom,yupik", "qcom,idp";
 	qcom,board-id = <34 0>;
 	oppo,dtsi_no = <21603>;
+	oplus,dtsi_no = <21603>;
 };

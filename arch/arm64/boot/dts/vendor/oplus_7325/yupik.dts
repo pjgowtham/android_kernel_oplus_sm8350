@@ -8,6 +8,7 @@
 	compatible = "qcom,yupik-idp", "qcom,yupik", "qcom,idp";
 	qcom,board-id = <34 0>;
 	oppo,dtsi_no = <21603 21612 21071 21075 21643>;
+	oplus,dtsi_no = <21603 21612 21071 21075 21643>;
 	aliases {
                 ufshc1 = &ufshc_mem; /* Embedded UFS Slot */
                 sdhc0 = &sdhc_1; /*SDC1 eMMC slot*/
