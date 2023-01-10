@@ -715,7 +715,7 @@ static void __dump_effects(struct haptics_chip *chip)
 			pos += scnprintf(str, size, "%s", "FIFO data: ");
 			for (j = 0; j < effect->fifo->num_s; j++)
 				pos += scnprintf(str + pos, size - pos, "%d ",
-						(s8)effect->fifo->samples[j]);
+						(u8)effect->fifo->samples[j]);
 
 			dev_dbg(chip->dev, "%s\n", str);
 			kfree(str);
