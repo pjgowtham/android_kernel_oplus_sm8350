@@ -45,7 +45,7 @@ int oplus_mount_block(const char __user *dir_name, unsigned long flags)
 
  	char dname[16] = {0};
 	if (dir_name != NULL && copy_from_user(dname, dir_name, 8) == 0) {
-		if ((!strncmp(dname, "/system", 8) || !strncmp(dname, "/vendor", 8))&& !(flags & MS_RDONLY)
+		if ((!strncmp(dname, "/system$", 8) || !strncmp(dname, "/vendor$", 8))&& !(flags & MS_RDONLY)
 			&& (is_normal_boot_mode())) {
 			printk(KERN_ERR "[OPLUS]System partition is not permitted to be mounted as readwrite\n");
 #ifdef CONFIG_OPLUS_KEVENT_UPLOAD
